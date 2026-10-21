@@ -1,0 +1,1793 @@
+<?php
+session_start();
+
+if ($_SERVER['HTTP_HOST'] == 'localhost' || strpos($_SERVER['HTTP_HOST'], '127.0.0.1') !== false) {
+    $conn_dv = new mysqli("localhost", "root", "", "cmtc_salon");
+} else {
+    $conn_dv = new mysqli("sql313.infinityfree.com", "if0_43116533", "0B2ClnIIsyqt0B", "if0_43116533_cmtc");
+}
+$conn_dv->set_charset("utf8mb4");
+
+// Đảm bảo bảng bang_dat_lich có cột email, cột thoi_gian_dat (lưu thời điểm khách bấm đặt) và cột dich_vu lưu được nhiều dịch vụ
+$conn_dv->query("ALTER TABLE `bang_dat_lich` ADD COLUMN IF NOT EXISTS `email` varchar(100) DEFAULT NULL;");
+$conn_dv->query("ALTER TABLE `bang_dat_lich` ADD COLUMN IF NOT EXISTS `thoi_gian_dat` timestamp DEFAULT CURRENT_TIMESTAMP;");
+$conn_dv->query("ALTER TABLE `bang_dat_lich` ADD COLUMN IF NOT EXISTS `trang_thai` varchar(50) DEFAULT 'Chờ phục vụ';");
+$conn_dv->query("ALTER TABLE `bang_dat_lich` MODIFY COLUMN `dich_vu` TEXT NOT NULL;");
+
+// Xử lý khi khách hàng cập nhật Họ và Tên trong Modal Tài khoản cá nhân
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_cap_nhat_ten_khach']) && isset($_SESSION['user_id'])) {
+    $ten_moi = $conn_dv->real_escape_string(trim($_POST['ho_ten_moi']));
+    if ($ten_moi !== "") {
+        $uid_up = (int)$_SESSION['user_id'];
+        $sdt_kh = $conn_dv->real_escape_string($_SESSION['so_dien_thoai'] ?? '');
+        $conn_dv->query("UPDATE tai_khoan SET ho_ten = '$ten_moi' WHERE id = $uid_up");
+        if ($sdt_kh !== '') {
+            $conn_dv->query("UPDATE bang_dat_lich SET ho_ten = '$ten_moi' WHERE so_dien_thoai = '$sdt_kh'");
+        }
+        $_SESSION['ho_ten'] = trim($_POST['ho_ten_moi']);
+        echo "<script>alert('✅ Đã cập nhật Họ và Tên thành công!'); window.location.href = 'DatLich.php';</script>";
+        exit();
+    }
+}
+
+// Tự động khởi tạo bảng lich_ban_tho nếu CSDL chưa có bảng này
+$conn_dv->query("CREATE TABLE IF NOT EXISTS `lich_ban_tho` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `ky_thuat_vien` varchar(100) NOT NULL,
+  `ngay_ban` date NOT NULL,
+  `gio_bat_dau` time NOT NULL,
+  `gio_ket_thuc` time NOT NULL,
+  `ly_do` varchar(255) DEFAULT 'Bận việc gia đình',
+  `ngay_tao` timestamp DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+// Lấy bảng giá toàn bộ dịch vụ để hiển thị danh sách chọn nhiều dịch vụ & tính tổng tiền
+$bang_gia_map = [];
+$danh_sach_dich_vu = [];
+$res_all_dv = $conn_dv->query("SELECT ten_dich_vu, gia_1 FROM dich_vu");
+if ($res_all_dv && $res_all_dv->num_rows > 0) {
+    while ($r_dv = $res_all_dv->fetch_assoc()) {
+        $gia_vnd = (is_numeric($r_dv['gia_1']) && $r_dv['gia_1'] > 0) ? (float)$r_dv['gia_1'] * 1000 : 0;
+        $bang_gia_map[$r_dv['ten_dich_vu']] = $gia_vnd;
+        $danh_sach_dich_vu[] = [
+            'ten' => $r_dv['ten_dich_vu'],
+            'gia' => $gia_vnd
+        ];
+    }
+}
+
+// Hàm tính tổng tiền của chuỗi nhiều dịch vụ (ngăn cách bởi dấu phẩy)
+function tinhTongTienChuoiDichVu($chuoi_dv, $map_gia) {
+    $cac_dv = explode(',', $chuoi_dv);
+    $tong = 0;
+    foreach ($cac_dv as $dv) {
+        $ten = trim($dv);
+        if (isset($map_gia[$ten])) {
+            $tong += $map_gia[$ten];
+        }
+    }
+    return ($tong > 0) ? $tong : 100000;
+}
+
+// 1. Lấy danh sách lịch bận của thợ từ bảng lich_ban_tho
+$lich_ban_arr = [];
+$res_ban = $conn_dv->query("SELECT ky_thuat_vien, ngay_ban, gio_bat_dau, gio_ket_thuc, ly_do FROM lich_ban_tho WHERE ngay_ban >= CURDATE()");
+if ($res_ban && $res_ban->num_rows > 0) {
+    while ($rb = $res_ban->fetch_assoc()) {
+        $lich_ban_arr[] = $rb;
+    }
+}
+
+// 2. Lấy danh sách các lịch hẹn ĐÃ ĐẶT trong bảng bang_dat_lich (từ hôm nay trở đi)
+$lich_da_dat_arr = [];
+$sql_da_dat = "SELECT id, ho_ten, salon_id, dich_vu, ky_thuat_vien, 
+                      DATE(ngay_gio) AS ngay_hen, 
+                      TIME_FORMAT(TIME(ngay_gio), '%H:%i') AS gio_hen,
+                      DATE_FORMAT(DATE_ADD(ngay_gio, INTERVAL 30 MINUTE), '%Y-%m-%dT%H:%i') AS ngay_gio_lui_30p,
+                      TIME_FORMAT(TIME(DATE_ADD(ngay_gio, INTERVAL 30 MINUTE)), '%H:%i') AS gio_lui_30p,
+                      ngay_gio 
+               FROM bang_dat_lich 
+               WHERE DATE(ngay_gio) >= CURDATE() 
+               ORDER BY ngay_gio ASC";
+$res_da_dat = $conn_dv->query($sql_da_dat);
+if ($res_da_dat && $res_da_dat->num_rows > 0) {
+    while ($rd = $res_da_dat->fetch_assoc()) {
+        $lich_da_dat_arr[] = $rd;
+    }
+}
+
+$da_dang_nhap = isset($_SESSION['user_id']);
+$thong_tin_vip = null;
+if ($da_dang_nhap) {
+    $sdt_check_vip = $conn_dv->real_escape_string($_SESSION['so_dien_thoai'] ?? '');
+    $em_check_vip  = $conn_dv->real_escape_string($_SESSION['email'] ?? '');
+    $conn_dv->query("CREATE TABLE IF NOT EXISTS `khach_hang_vip` (
+      `id` int(11) NOT NULL AUTO_INCREMENT,
+      `ho_ten` varchar(100) NOT NULL,
+      `so_dien_thoai` varchar(20) NOT NULL UNIQUE,
+      `email` varchar(100) DEFAULT NULL,
+      `so_lan_cat` int(11) DEFAULT 1,
+      `tong_chi_tieu` decimal(15,0) DEFAULT 0,
+      `hang_vip` varchar(50) DEFAULT 'VIP Bạc',
+      `phan_tram_giam` int(11) DEFAULT 10,
+      `uu_dai_dac_quyen` varchar(255) DEFAULT 'Giảm 10% tổng hóa đơn + Tặng gội massage thảo dược',
+      `ngay_cap_nhat` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+    $res_my_vip = $conn_dv->query("SELECT * FROM khach_hang_vip WHERE (so_dien_thoai != '' AND so_dien_thoai = '$sdt_check_vip') OR (email != '' AND email = '$em_check_vip') LIMIT 1");
+    if ($res_my_vip && $res_my_vip->num_rows > 0) {
+        $thong_tin_vip = $res_my_vip->fetch_assoc();
+    }
+}
+
+// 3. Lấy LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY từ bảng SQL bang_dat_lich
+$lich_su_gan_day_sql = [];
+$sql_ls_recent = "SELECT b.*, 
+                         DATE_FORMAT(COALESCE(b.thoi_gian_dat, b.ngay_gio), '%H:%i - %d/%m/%Y') AS thoi_gian_tao_dep,
+                         DATE_FORMAT(b.ngay_gio, '%H:%i - %d/%m/%Y') AS thoi_gian_dat_dep,
+                         DATE_FORMAT(DATE_ADD(b.ngay_gio, INTERVAL 30 MINUTE), '%H:%i - %d/%m/%Y') AS thoi_gian_tiep_theo_dep,
+                         DATE_FORMAT(DATE_ADD(b.ngay_gio, INTERVAL 30 MINUTE), '%Y-%m-%dT%H:%i') AS iso_tiep_theo
+                  FROM bang_dat_lich b
+                  ORDER BY b.ngay_gio DESC, b.id DESC
+                  LIMIT 15";
+$res_ls_recent = $conn_dv->query($sql_ls_recent);
+if ($res_ls_recent && $res_ls_recent->num_rows > 0) {
+    while ($r_ls = $res_ls_recent->fetch_assoc()) {
+        $r_ls['thanh_tien'] = tinhTongTienChuoiDichVu($r_ls['dich_vu'], $bang_gia_map);
+        $lich_su_gan_day_sql[] = $r_ls;
+    }
+}
+
+// 4. Lấy lịch sử đặt lịch của riêng tài khoản đang đăng nhập
+$lich_su_cua_toi = [];
+if ($da_dang_nhap) {
+    $sdt_u = $conn_dv->real_escape_string($_SESSION['so_dien_thoai'] ?? '');
+    $em_u  = $conn_dv->real_escape_string($_SESSION['email'] ?? '');
+    $sql_my = "SELECT b.*, 
+                      DATE_FORMAT(COALESCE(b.thoi_gian_dat, b.ngay_gio), '%H:%i - %d/%m/%Y') AS thoi_gian_tao_dep,
+                      DATE_FORMAT(b.ngay_gio, '%H:%i - %d/%m/%Y') AS thoi_gian_dat_dep
+               FROM bang_dat_lich b
+               WHERE (b.so_dien_thoai != '' AND b.so_dien_thoai = '$sdt_u')
+                  OR (b.email != '' AND b.email = '$em_u')
+               ORDER BY b.ngay_gio DESC, b.id DESC";
+    $res_my = $conn_dv->query($sql_my);
+    if ($res_my && $res_my->num_rows > 0) {
+        while ($rm = $res_my->fetch_assoc()) {
+            $rm['thanh_tien'] = tinhTongTienChuoiDichVu($rm['dich_vu'], $bang_gia_map);
+            $lich_su_cua_toi[] = $rm;
+        }
+    }
+}
+
+function cheSDTKhach($sdt) {
+    $sdt = trim($sdt);
+    if (strlen($sdt) >= 9) {
+        return substr($sdt, 0, 3) . '***' . substr($sdt, -3);
+    }
+    return $sdt;
+}
+?>
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đặt Lịch Cắt Tóc Chuyên Nghiệp - CMTC Salon</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="DatLich.css" rel="stylesheet">
+    <style>
+    .input-locked-bold {
+        font-weight: 700 !important;
+        color: #111 !important;
+        background-color: #e9ecef !important;
+        cursor: not-allowed !important;
+        border: 1.5px solid #adb5bd !important;
+    }
+
+    /* CSS cho ảnh Logo hình tròn của Salon ở phía trên tiêu đề Đặt Lịch Hẹn */
+    .salon-circle-logo-wrapper {
+        display: inline-block;
+        padding: 4px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #c09e6c 0%, #111 100%);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+        margin-bottom: 12px;
+    }
+
+    .salon-circle-logo {
+        width: 96px;
+        height: 96px;
+        border-radius: 50%;
+        object-fit: cover;
+        background-color: #111;
+        border: 3px solid #fff;
+        display: block;
+    }
+
+    .history-sql-card {
+        border: none;
+        border-radius: 16px;
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.07);
+        background: #fff;
+    }
+
+    .badge-slot-next {
+        background-color: #e8f5e9;
+        color: #1b5e20;
+        border: 1px solid #a5d6a7;
+        font-weight: 700;
+    }
+
+    /* Giao diện chọn nhiều dịch vụ chuyên nghiệp */
+    .multi-service-dropdown-btn {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 12px 15px;
+        background: #fff;
+        text-align: left;
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .multi-service-dropdown-btn:hover,
+    .multi-service-dropdown-btn:focus {
+        border-color: #c09e6c;
+        box-shadow: 0 0 0 3px rgba(192, 158, 108, 0.15);
+    }
+
+    .service-checklist-box {
+        max-height: 250px;
+        overflow-y: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        background: #fff;
+        padding: 10px;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+    }
+
+    .service-item-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        margin-bottom: 4px;
+        border: 1px solid transparent;
+    }
+
+    .service-item-label:hover {
+        background-color: #fdfaf6;
+        border-color: #e6b96f;
+    }
+
+    .service-item-label:has(input:checked) {
+        background-color: #fdf8ee;
+        border-color: #c09e6c;
+        font-weight: 600;
+    }
+
+    .selected-dv-badge {
+        display: inline-block;
+        background: #111;
+        color: #e6b96f;
+        border-radius: 6px;
+        padding: 3px 9px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin: 2px 4px 2px 0;
+    }
+    </style>
+</head>
+
+<body class="d-flex flex-column min-vh-100 bg-light">
+
+    <!-- THANH MENU ĐIỀU HƯỚNG ĐỒNG BỘ TẤT CẢ CÁC TRANG -->
+    <!-- ========================================================================= -->
+    <!-- CSS THANH MENU & FOOTER CHUYÊN NGHIỆP ĐA THIẾT BỊ (PC 16:9 & MOBILE 9:16) -->
+    <!-- ========================================================================= -->
+    <style>
+    :root {
+        --cmtc-gold: #e6b96f;
+        --cmtc-gold-dark: #c09e6c;
+        --cmtc-dark: #0f1216;
+        --cmtc-dark-2: #181c22;
+    }
+
+    /* --- 1. NAVBAR MÁY TÍNH & ĐIỆN THOẠI (GLASSMORPHISM) --- */
+    .cmtc-navbar {
+        background: rgba(15, 18, 22, 0.94) !important;
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border-bottom: 1px solid rgba(230, 185, 111, 0.25);
+        padding: 10px 0;
+        transition: all 0.3s ease;
+        z-index: 1040;
+    }
+
+    .cmtc-brand-wrap {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+    }
+
+    .cmtc-brand-logo-circle {
+        width: 46px;
+        height: 46px;
+        border-radius: 50%;
+        border: 2px solid var(--cmtc-gold);
+        overflow: hidden;
+        background: #111;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        box-shadow: 0 3px 10px rgba(230, 185, 111, 0.25);
+    }
+
+    .cmtc-brand-logo-circle img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .cmtc-brand-text {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.15;
+    }
+
+    .cmtc-brand-title {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: var(--cmtc-gold);
+        letter-spacing: 1px;
+        text-transform: uppercase;
+    }
+
+    .cmtc-brand-sub {
+        font-size: 0.7rem;
+        color: rgba(255, 255, 255, 0.65);
+        letter-spacing: 0.5px;
+    }
+
+    /* Link Menu trên Desktop */
+    .cmtc-nav-link {
+        color: rgba(255, 255, 255, 0.85) !important;
+        font-weight: 600;
+        font-size: 0.94rem;
+        padding: 8px 15px !important;
+        border-radius: 8px;
+        position: relative;
+        transition: all 0.25s ease;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .cmtc-nav-link i {
+        font-size: 1rem;
+        color: var(--cmtc-gold);
+        transition: transform 0.25s ease;
+    }
+
+    .cmtc-nav-link:hover {
+        color: var(--cmtc-gold) !important;
+        background: rgba(230, 185, 111, 0.08);
+    }
+
+    .cmtc-nav-link:hover i {
+        transform: translateY(-2px);
+    }
+
+    .cmtc-nav-link.active {
+        color: var(--cmtc-gold) !important;
+        background: rgba(230, 185, 111, 0.14);
+        font-weight: 700;
+    }
+
+    .cmtc-nav-link.active::after {
+        content: "";
+        position: absolute;
+        bottom: 3px;
+        left: 15px;
+        right: 15px;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--cmtc-gold), transparent);
+        border-radius: 2px;
+    }
+
+    /* Nút Đặt Lịch Nổi Bật Trên Menu */
+    .btn-nav-booking {
+        background: linear-gradient(135deg, #e6b96f 0%, #c09e6c 100%);
+        color: #111 !important;
+        font-weight: 700;
+        font-size: 0.88rem;
+        padding: 8px 18px;
+        border-radius: 50px;
+        border: none;
+        box-shadow: 0 4px 14px rgba(230, 185, 111, 0.35);
+        transition: all 0.25s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .btn-nav-booking:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 18px rgba(230, 185, 111, 0.55);
+        background: linear-gradient(135deg, #f3ca82 0%, #CFA86E 100%);
+        color: #000 !important;
+    }
+
+    /* Nút Tài Khoản Khách Hàng */
+    .btn-nav-user {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--cmtc-gold) !important;
+        border: 1px solid rgba(230, 185, 111, 0.45);
+        font-weight: 600;
+        font-size: 0.86rem;
+        padding: 7px 14px;
+        border-radius: 50px;
+        transition: all 0.25s ease;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .btn-nav-user:hover {
+        background: var(--cmtc-gold);
+        color: #111 !important;
+    }
+
+    /* Nút Hamburger trên Điện Thoại */
+    .cmtc-toggler {
+        border: 1.5px solid rgba(230, 185, 111, 0.6) !important;
+        border-radius: 10px;
+        padding: 6px 10px;
+        color: var(--cmtc-gold) !important;
+        background: rgba(230, 185, 111, 0.08);
+    }
+
+    .cmtc-toggler:focus {
+        box-shadow: 0 0 0 3px rgba(230, 185, 111, 0.25) !important;
+    }
+
+    /* --- 2. MENU TRƯỢT OFFCANVAS TRÊN ĐIỆN THOẠI --- */
+    .cmtc-offcanvas {
+        background: linear-gradient(180deg, #0f1216 0%, #181c22 100%) !important;
+        color: #fff;
+        border-left: 1px solid rgba(230, 185, 111, 0.25) !important;
+        width: 300px !important;
+    }
+
+    .cmtc-mobile-link {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        color: rgba(255, 255, 255, 0.88);
+        text-decoration: none;
+        font-weight: 600;
+        border-radius: 12px;
+        margin-bottom: 6px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        transition: all 0.2s ease;
+    }
+
+    .cmtc-mobile-link:hover,
+    .cmtc-mobile-link.active {
+        background: rgba(230, 185, 111, 0.15);
+        border-color: var(--cmtc-gold);
+        color: var(--cmtc-gold);
+    }
+
+    /* --- 3. THANH NAVIGATION ĐÁY MÀN HÌNH DÀNH RIÊNG CHO ĐIỆN THOẠI (< 992px) --- */
+    .cmtc-mobile-bottom-bar {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 64px;
+        background: rgba(15, 18, 22, 0.96);
+        backdrop-filter: blur(12px);
+        border-top: 1px solid rgba(230, 185, 111, 0.3);
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        z-index: 1035;
+        padding: 0 6px;
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
+    }
+
+    .cmtc-bottom-item {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: rgba(255, 255, 255, 0.68);
+        text-decoration: none;
+        font-size: 0.7rem;
+        font-weight: 600;
+        padding: 4px 0;
+        transition: all 0.2s ease;
+    }
+
+    .cmtc-bottom-item i {
+        font-size: 1.2rem;
+        margin-bottom: 2px;
+    }
+
+    .cmtc-bottom-item.active,
+    .cmtc-bottom-item:hover {
+        color: var(--cmtc-gold);
+    }
+
+    .cmtc-bottom-booking-center {
+        background: linear-gradient(135deg, #e6b96f 0%, #c09e6c 100%);
+        color: #111 !important;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: -22px;
+        border: 3px solid #0f1216;
+        box-shadow: 0 4px 12px rgba(230, 185, 111, 0.45);
+    }
+
+    @media (max-width: 991.98px) {
+        body {
+            padding-bottom: 66px;
+            /* Tránh thanh bottom bar che nội dung dưới cùng trên điện thoại */
+        }
+    }
+    </style>
+
+    <!-- THANH NAVBAR CHÍNH -->
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top cmtc-navbar">
+        <div class="container">
+            <!-- Logo & Tên Thương Hiệu -->
+            <a class="cmtc-brand-wrap" href="../TrangChu/index.php">
+                <div class="cmtc-brand-logo-circle">
+                    <img src="../images/logo.png"
+                        onerror="this.src='../images/Gemini_Generated_Image_1wira21wira21wir.png'" alt="CMTC Salon">
+                </div>
+                <div class="cmtc-brand-text">
+                    <span class="cmtc-brand-title">CMTC SALON</span>
+                    <span class="cmtc-brand-sub">Gentleman Hair Studio</span>
+                </div>
+            </a>
+
+            <!-- Nút Mở Menu Trên Điện Thoại (Mở Offcanvas mượt mà) -->
+            <div class="d-flex align-items-center gap-2 d-lg-none">
+                <?php if (isset($_SESSION['user_id'])): ?>
+                <a class="btn-nav-user py-1 px-2" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">
+                    <i class="bi bi-person-circle"></i>
+                    <span class="text-truncate"
+                        style="max-width: 85px;"><?= htmlspecialchars($_SESSION['ho_ten']) ?></span>
+                </a>
+                <?php endif; ?>
+                <button class="navbar-toggler cmtc-toggler" type="button" data-bs-toggle="offcanvas"
+                    data-bs-target="#menuDienThoaiOffcanvas" aria-label="Mở menu">
+                    <i class="bi bi-list fs-4"></i>
+                </button>
+            </div>
+
+            <!-- Menu Trên Máy Tính (Desktop >= 992px) -->
+            <div class="collapse navbar-collapse d-none d-lg-flex" id="menuChinh">
+                <ul class="navbar-nav mx-auto mb-2 mb-lg-0 gap-1">
+                    <li class="nav-item">
+                        <a class="nav-link cmtc-nav-link " href="../TrangChu/index.php">
+                            <i class="bi bi-house-door"></i>Trang Chủ
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link cmtc-nav-link " href="../DichVu/DichVu.php">
+                            <i class="bi bi-scissors"></i>Dịch Vụ
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link cmtc-nav-link " href="../BangGia/BangGia.php">
+                            <i class="bi bi-tags"></i>Bảng Giá
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link cmtc-nav-link " href="../ThongTin/ThongTin.php">
+                            <i class="bi bi-info-circle"></i>Thông Tin
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link cmtc-nav-link active" href="../DatLich/DatLich.php">
+                            <i class="bi bi-calendar2-check"></i>Đặt Lịch
+                        </a>
+                    </li>
+                </ul>
+
+                <!-- Cụm Nút Phải Trên Desktop -->
+                <div class="d-flex align-items-center gap-2">
+                    <a href="../DatLich/DatLich.php" class="btn-nav-booking">
+                        <i class="bi bi-calendar-plus-fill"></i>Đặt Lịch Ngay
+                    </a>
+
+                    <?php if (isset($_SESSION['user_id'])): ?>
+                    <a class="btn-nav-user" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">
+                        <i class="bi bi-person-circle"></i><?= htmlspecialchars($_SESSION['ho_ten']) ?> (Tài khoản)
+                    </a>
+                    <?php if (isset($_SESSION['vai_tro']) && $_SESSION['vai_tro'] == 'admin'): ?>
+                    <a class="btn btn-info btn-sm fw-bold rounded-pill px-3" href="../Login/admin.php">
+                        <i class="bi bi-speedometer2 me-1"></i>Admin
+                    </a>
+                    <?php endif; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- MENU TRƯỢT OFFCANVAS DÀNH CHO ĐIỆN THOẠI & TABLET -->
+    <div class="offcanvas offcanvas-end cmtc-offcanvas" tabindex="-1" id="menuDienThoaiOffcanvas">
+        <div class="offcanvas-header border-bottom border-secondary border-opacity-25 py-3">
+            <div class="cmtc-brand-wrap">
+                <div class="cmtc-brand-logo-circle" style="width: 40px; height: 40px;">
+                    <img src="../images/logo.png"
+                        onerror="this.src='../images/Gemini_Generated_Image_1wira21wira21wir.png'" alt="Logo">
+                </div>
+                <div class="cmtc-brand-text">
+                    <span class="cmtc-brand-title" style="font-size: 1rem;">CMTC SALON</span>
+                    <span class="cmtc-brand-sub">Menu Điều Hướng</span>
+                </div>
+            </div>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+        </div>
+        <div class="offcanvas-body d-flex flex-column justify-content-between p-3">
+            <div>
+                <?php if (isset($_SESSION['user_id'])): ?>
+                <div class="p-3 rounded-3 mb-3 border border-warning border-opacity-50"
+                    style="background: rgba(230, 185, 111, 0.1);">
+                    <div class="d-flex align-items-center justify-content-between mb-1">
+                        <span class="fw-bold text-warning"><i
+                                class="bi bi-person-check-fill me-1"></i><?= htmlspecialchars($_SESSION['ho_ten']) ?></span>
+                        <button type="button" class="btn btn-warning btn-sm py-0 px-2 fw-bold"
+                            data-bs-dismiss="offcanvas" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">Sửa
+                            tên</button>
+                    </div>
+                    <div class="small text-light opacity-75"><?= htmlspecialchars($_SESSION['so_dien_thoai'] ?? '') ?> •
+                        <?= htmlspecialchars($_SESSION['email'] ?? '') ?></div>
+                </div>
+                <?php endif; ?>
+
+                <div class="mb-3">
+                    <a href="../TrangChu/index.php" class="cmtc-mobile-link ">
+                        <span><i class="bi bi-house-door-fill me-2 text-warning"></i>Trang Chủ</span>
+                        <i class="bi bi-chevron-right small opacity-50"></i>
+                    </a>
+                    <a href="../DichVu/DichVu.php" class="cmtc-mobile-link ">
+                        <span><i class="bi bi-scissors me-2 text-warning"></i>Dịch Vụ Chăm Sóc Tóc</span>
+                        <i class="bi bi-chevron-right small opacity-50"></i>
+                    </a>
+                    <a href="../BangGia/BangGia.php" class="cmtc-mobile-link ">
+                        <span><i class="bi bi-tags-fill me-2 text-warning"></i>Bảng Giá Niêm Yết</span>
+                        <i class="bi bi-chevron-right small opacity-50"></i>
+                    </a>
+                    <a href="../ThongTin/ThongTin.php" class="cmtc-mobile-link ">
+                        <span><i class="bi bi-info-circle-fill me-2 text-warning"></i>Thông Tin & Chi Nhánh</span>
+                        <i class="bi bi-chevron-right small opacity-50"></i>
+                    </a>
+                    <a href="../DatLich/DatLich.php" class="cmtc-mobile-link active">
+                        <span><i class="bi bi-calendar2-check-fill me-2 text-warning"></i>Đặt Lịch Cắt Tóc</span>
+                        <i class="bi bi-chevron-right small opacity-50"></i>
+                    </a>
+                    <?php if (isset($_SESSION['vai_tro']) && $_SESSION['vai_tro'] == 'admin'): ?>
+                    <a href="../Login/admin.php" class="cmtc-mobile-link text-info border-info">
+                        <span><i class="bi bi-speedometer2 me-2"></i>Bảng Điều Khiển Admin</span>
+                        <i class="bi bi-chevron-right small"></i>
+                    </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <div class="border-top border-secondary border-opacity-25 pt-3">
+                <a href="../DatLich/DatLich.php" class="btn-nav-booking w-100 justify-content-center py-2 mb-2">
+                    <i class="bi bi-calendar2-heart-fill"></i>ĐẶT LỊCH HẸN NGAY
+                </a>
+                <a href="tel:0971714681" class="btn btn-outline-light btn-sm w-100 rounded-pill py-2">
+                    <i class="bi bi-telephone-outbound-fill text-success me-1"></i>Hotline: 0971.714.681
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- THANH ĐIỀU HƯỚNG CỐ ĐỊNH DƯỚI ĐÁY MÀN HÌNH ĐIỆN THOẠI (MOBILE BOTTOM BAR) -->
+    <div class="cmtc-mobile-bottom-bar d-lg-none">
+        <a href="../TrangChu/index.php" class="cmtc-bottom-item ">
+            <i class="bi bi-house-door-fill"></i>
+            <span>Trang Chủ</span>
+        </a>
+        <a href="../DichVu/DichVu.php" class="cmtc-bottom-item ">
+            <i class="bi bi-scissors"></i>
+            <span>Dịch Vụ</span>
+        </a>
+        <a href="../DatLich/DatLich.php" class="cmtc-bottom-item active">
+            <div class="cmtc-bottom-booking-center">
+                <i class="bi bi-calendar-plus-fill fs-5 m-0 text-dark"></i>
+            </div>
+            <span class="text-warning fw-bold mt-1">Đặt Lịch</span>
+        </a>
+        <a href="../BangGia/BangGia.php" class="cmtc-bottom-item ">
+            <i class="bi bi-tags-fill"></i>
+            <span>Bảng Giá</span>
+        </a>
+        <?php if (isset($_SESSION['user_id'])): ?>
+        <a href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan" class="cmtc-bottom-item">
+            <i class="bi bi-person-Check-fill bi-person-circle text-warning"></i>
+            <span class="text-warning text-truncate"
+                style="max-width: 60px;"><?= htmlspecialchars($_SESSION['ho_ten']) ?></span>
+        </a>
+        <?php else: ?>
+        <a href="../ThongTin/ThongTin.php" class="cmtc-bottom-item ">
+            <i class="bi bi-geo-alt-fill"></i>
+            <span>Thông Tin</span>
+        </a>
+        <?php endif; ?>
+    </div>
+
+    <?php if (isset($_SESSION['user_id'])): ?>
+    <!-- MODAL THÔNG TIN TÀI KHOẢN CÁ NHÂN (CHỈ CHO SỬA TÊN, KHÓA EMAIL & SĐT IN ĐẬM) -->
+    <div class="modal fade" id="modalThongTinCaNhan" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg rounded-4">
+                <div class="modal-header bg-dark text-warning border-0">
+                    <h5 class="modal-title fw-bold"><i class="bi bi-person-badge me-2"></i>Thông Tin Tài Khoản Cá Nhân
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <form method="POST" action="">
+                    <div class="modal-body p-4">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-dark"><i class="bi bi-person me-1"></i>HỌ VÀ TÊN
+                                (Được phép chỉnh sửa)</label>
+                            <input type="text" name="ho_ten_moi" class="form-control fw-semibold border-warning"
+                                value="<?= htmlspecialchars($_SESSION['ho_ten'] ?? '') ?>" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted"><i
+                                    class="bi bi-envelope-lock me-1"></i>ĐỊA CHỈ EMAIL (Cố định - Không thể thay
+                                đổi)</label>
+                            <input type="email" class="form-control bg-secondary bg-opacity-10 text-dark fw-bold"
+                                value="<?= htmlspecialchars($_SESSION['email'] ?? '') ?>" readonly disabled
+                                style="cursor: not-allowed;">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold small text-muted"><i
+                                    class="bi bi-telephone-fill me-1"></i>SỐ ĐIỆN THOẠI (Cố định - Không thể thay
+                                đổi)</label>
+                            <input type="text" class="form-control bg-secondary bg-opacity-10 text-dark fw-bold"
+                                value="<?= htmlspecialchars($_SESSION['so_dien_thoai'] ?? '') ?>" readonly disabled
+                                style="cursor: not-allowed;">
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center pt-2 border-top mt-3">
+                            <a href="../DatLich/DatLich.php#bangLichSuGanDaySQL"
+                                class="btn btn-outline-dark btn-sm fw-semibold">
+                                <i class="bi bi-clock-history me-1"></i>Xem Lịch Sử Đặt Lịch
+                            </a>
+                            <a href="../Login/login.php?logout=1" class="btn btn-outline-danger btn-sm fw-semibold">
+                                <i class="bi bi-box-arrow-right me-1"></i>Đăng xuất
+                            </a>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light border-0">
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+                        <button type="submit" name="btn_cap_nhat_ten_khach" class="btn btn-warning btn-sm fw-bold px-3">
+                            <i class="bi bi-check2-circle me-1"></i>Lưu Thay Đổi Tên
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
+
+    <!-- NỘI DUNG FORM ĐẶT LỊCH & BẢNG LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY TỪ SQL -->
+    <section class="py-5 flex-grow-1">
+        <div class="container">
+
+            <!-- LOGO HÌNH TRÒN CỦA SALON Ở TRÊN TIÊU ĐỀ ĐẶT LỊCH HẸN (BẠN TỰ CHÈN ẢNH TẠI THUỘC TÍNH src DƯỚI ĐÂY) -->
+            <div class="text-center mb-4">
+                <div class="salon-circle-logo-wrapper">
+                    <!-- THAY ĐƯỜNG DẪN ẢNH LOGO CỦA BẠN VÀO src="..." BÊN DƯỚI -->
+                    <img src="../images/logo.png"
+                        onerror="this.src='../images/Gemini_Generated_Image_1wira21wira21wir.png'" alt="Logo CMTC Salon"
+                        class="salon-circle-logo">
+                </div>
+                <h2 class="fw-bold fs-1 text-uppercase mb-2">ĐẶT LỊCH HẸN CMTC SALON</h2>
+                <p class="text-muted fs-6">Chọn kết hợp nhiều dịch vụ yêu thích, tự động sắp xếp giờ hẹn cách ca 30
+                    phút, vui lòng đăng ký tài khoản Gmail và SĐT chính chủ.</p>
+            </div>
+
+            <div class="row justify-content-center">
+                <div class="col-lg-10 col-xl-9">
+
+                    <!-- BẮT BUỘC ĐĂNG NHẬP TRƯỚC KHI ĐẶT LỊCH -->
+                    <?php if (!$da_dang_nhap): ?>
+                    <div
+                        class="alert alert-danger d-flex flex-column flex-md-row justify-content-between align-items-md-center shadow-sm rounded-3 mb-4 p-3 border-danger">
+                        <div class="mb-2 mb-md-0">
+                            <i class="bi bi-shield-lock-fill fs-5 me-2"></i>
+                            <strong>Yêu cầu đăng nhập:</strong> Quý khách vui lòng <strong>Đăng nhập / Đăng ký tài
+                                khoản</strong> để hệ thống xác thực cố định Số điện thoại và Email trước khi đặt lịch!
+                        </div>
+                        <a href="../Login/login.php" class="btn btn-dark fw-bold px-4 flex-shrink-0">
+                            <i class="bi bi-box-arrow-in-right me-1"></i>Đăng nhập ngay
+                        </a>
+                    </div>
+                    <?php else: ?>
+                    <div
+                        class="alert alert-success d-flex flex-wrap justify-content-between align-items-center shadow-sm rounded-3 mb-3 py-2 px-3 gap-2">
+                        <span class="small">
+                            <i class="bi bi-person-check-fill me-1"></i>Khách hàng:
+                            <strong><?= htmlspecialchars($_SESSION['ho_ten']) ?></strong> • SĐT & Gmail đã được xác thực
+                            cố định
+                        </span>
+                        <div class="d-flex gap-2">
+                            <a href="#bangLichSuGanDaySQL" class="btn btn-dark btn-sm py-0 fw-semibold">
+                                <i class="bi bi-table me-1"></i>Lịch sử đặt gần đây
+                            </a>
+                            <button type="button" class="btn btn-outline-success btn-sm py-0" data-bs-toggle="modal"
+                                data-bs-target="#modalThongTinCaNhan">Đổi tên</button>
+                        </div>
+                    </div>
+                    <?php if ($thong_tin_vip): ?>
+                    <div class="p-3 mb-4 rounded-3 shadow-sm d-flex align-items-center justify-content-between"
+                        style="background: linear-gradient(135deg, #111 0%, #2b3035 100%); color: #fff; border: 2px solid #e6b96f;">
+                        <div>
+                            <span
+                                class="badge bg-warning text-dark fw-bold mb-1"><?= htmlspecialchars($thong_tin_vip['hang_vip']) ?>
+                                (Top 5 VIP)</span>
+                            <div class="small text-light">
+                                <strong>Đặc quyền VIP của bạn:</strong> <span
+                                    class="text-warning"><?= htmlspecialchars($thong_tin_vip['uu_dai_dac_quyen']) ?></span>
+                            </div>
+                        </div>
+                        <span
+                            class="badge bg-danger fs-6 px-3 py-2">-<?= (int)$thong_tin_vip['phan_tram_giam'] ?>%</span>
+                    </div>
+                    <?php endif; ?>
+                    <?php endif; ?>
+
+                    <div class="card shadow-lg border-0 rounded-4 mb-5">
+                        <div class="card-body p-4 p-md-5">
+                            <form id="formDatLich" action="xu_ly_dat_lich.php" method="POST"
+                                onsubmit="return kiemTraTruocKhiGui()">
+                                <!-- Hàng 1: Chọn Tỉnh/Thành Phố (Đã bỏ ô Quận/Huyện không cần thiết để tránh lệch địa chỉ cơ sở) -->
+                                <div class="mb-4">
+                                    <label class="form-label form-label-custom"><i class="bi bi-geo-alt me-2"></i>CHỌN
+                                        TỈNH/THÀNH PHỐ</label>
+                                    <select name="tinh_thanh" id="tinhThanh"
+                                        class="form-select form-select-lg text-dark fw-semibold custom-input" required>
+                                        <option selected disabled value="">Đang tải dữ liệu...</option>
+                                    </select>
+                                    <!-- Trường ẩn lưu khu vực đúng theo cơ sở Salon khách chọn -->
+                                    <input type="hidden" name="quan_huyen" id="quanHuyenHidden" value="">
+                                </div>
+
+                                <!-- Hàng 2: Chọn Cơ Sở Salon -->
+                                <div class="mb-4">
+                                    <label class="form-label form-label-custom"><i class="bi bi-shop me-2"></i>CHỌN CƠ
+                                        SỞ
+                                        SALON</label>
+                                    <div id="salonContainer" class="row g-3">
+                                        <div class="col-12">
+                                            <div class="salon-warning-box text-center py-4 rounded-3 border">
+                                                <p class="mb-0 text-danger"><i
+                                                        class="bi bi-exclamation-circle text-danger me-2"></i>Chọn
+                                                    <strong>Tỉnh/Thành phố</strong> để hiển thị những cơ sở salon của
+                                                    chúng
+                                                    tôi!
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Hàng 3: CHỌN NHIỀU DỊCH VỤ & KỸ THUẬT VIÊN -->
+                                <div class="row g-4 mb-3">
+                                    <div class="col-md-6">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <label class="form-label form-label-custom mb-0"><i
+                                                    class="bi bi-layers me-2"></i>CHỌN DỊCH VỤ (CÓ THỂ CHỌN
+                                                NHIỀU)</label>
+                                            <span id="tongTienHienThi" class="badge bg-success"
+                                                style="font-size: 12px;">0 VNĐ</span>
+                                        </div>
+
+                                        <!-- Nút mở danh sách tích chọn nhiều dịch vụ -->
+                                        <button type="button" class="multi-service-dropdown-btn"
+                                            data-bs-toggle="collapse" data-bs-target="#khungChonNhieuDichVu"
+                                            aria-expanded="false">
+                                            <span id="textTomTatDichVu" class="text-muted">Bấm để tích chọn 1 hoặc nhiều
+                                                dịch vụ...</span>
+                                            <i class="bi bi-chevron-down text-secondary"></i>
+                                        </button>
+
+                                        <!-- Danh sách Checkbox các dịch vụ từ SQL -->
+                                        <div class="collapse mt-2 show" id="khungChonNhieuDichVu">
+                                            <div class="service-checklist-box">
+                                                <?php if (count($danh_sach_dich_vu) > 0): ?>
+                                                <?php foreach ($danh_sach_dich_vu as $idx_dv => $dv_obj): 
+                                                        $gia_fmt = number_format($dv_obj['gia'], 0, ',', '.') . ' VNĐ';
+                                                    ?>
+                                                <label class="service-item-label">
+                                                    <div class="d-flex align-items-center">
+                                                        <input type="checkbox" name="dich_vu[]"
+                                                            value="<?= htmlspecialchars($dv_obj['ten']) ?>"
+                                                            data-gia="<?= $dv_obj['gia'] ?>"
+                                                            class="form-check-input me-2 chk-dich-vu"
+                                                            onchange="capNhatDanhSachDichVu()">
+                                                        <span
+                                                            class="text-dark small"><?= htmlspecialchars($dv_obj['ten']) ?></span>
+                                                    </div>
+                                                    <span
+                                                        class="badge bg-light text-danger border"><?= $gia_fmt ?></span>
+                                                </label>
+                                                <?php endforeach; ?>
+                                                <?php else: ?>
+                                                <div class="text-muted small p-2">Chưa có dịch vụ trong CSDL.</div>
+                                                <?php endif; ?>
+                                            </div>
+                                        </div>
+                                        <div id="khungTheDichVuDaChon" class="mt-2"></div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label class="form-label form-label-custom mb-1"><i
+                                                class="bi bi-scissors me-2"></i>KỸ THUẬT VIÊN</label>
+                                        <select name="ky_thuat_vien" id="kyThuatVien"
+                                            class="form-select form-select-lg text-muted custom-input" disabled
+                                            required>
+                                            <option selected disabled value="">Vui lòng chọn Cơ sở Salon trước</option>
+                                        </select>
+
+                                        <div class="p-3 bg-light rounded-3 border mt-3 small text-muted">
+                                            <i class="bi bi-shield-check text-success me-1"></i><strong>Tự động xếp lịch
+                                                thông minh:</strong><br>
+                                            Hệ thống tự động kiểm tra lịch bận của thợ và tự động xếp lùi <strong>+30
+                                                phút</strong> nếu trùng giờ với khách đặt trước.
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Khung hiển thị lịch bận của thợ & thông báo tự động cố định lùi 30p -->
+                                <div id="khungCanhBaoLichBan" class="alert alert-danger d-none small mb-4"></div>
+
+                                <!-- Hàng 4: Ngày giờ, Họ tên, SĐT & Gmail -->
+                                <div class="row g-3 mb-4">
+                                    <div class="col-md-6">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <label class="form-label form-label-custom mb-1"><i
+                                                    class="bi bi-calendar3 me-2"></i>CHỌN NGÀY GIỜ HẸN</label>
+                                            <span class="badge bg-warning text-dark mb-1" style="font-size: 11px;">Cách
+                                                ca +30p</span>
+                                        </div>
+                                        <input type="datetime-local" name="ngay_gio" id="ngayGioInput"
+                                            class="form-control form-control-lg fw-bold text-dark custom-input"
+                                            required>
+                                        <small id="goiYKhungGioTiepTheo"
+                                            class="text-success fw-semibold d-block mt-1"></small>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label form-label-custom mb-1"><i
+                                                class="bi bi-person me-2"></i>HỌ
+                                            VÀ TÊN KHÁCH HÀNG (Có thể sửa)</label>
+                                        <input type="text" name="ho_ten"
+                                            class="form-control form-control-lg custom-input fw-semibold"
+                                            placeholder="<?= $da_dang_nhap ? 'Tên của bạn' : 'Vui lòng đăng nhập trước...' ?>"
+                                            value="<?= htmlspecialchars($_SESSION['ho_ten'] ?? '') ?>"
+                                            <?= !$da_dang_nhap ? 'readonly' : '' ?> required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label form-label-custom"><i
+                                                class="bi bi-telephone-fill me-2"></i>SỐ ĐIỆN THOẠI (Cố định)</label>
+                                        <input type="tel" name="so_dien_thoai"
+                                            class="form-control form-control-lg custom-input input-locked-bold"
+                                            placeholder="<?= $da_dang_nhap ? 'Số điện thoại' : 'Đăng nhập để hiển thị SĐT cố định' ?>"
+                                            value="<?= htmlspecialchars($_SESSION['so_dien_thoai'] ?? '') ?>" readonly
+                                            title="Số điện thoại cố định theo tài khoản, không thể chỉnh sửa" required>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label form-label-custom"><i
+                                                class="bi bi-envelope-lock me-2"></i>ĐỊA CHỈ GMAIL (Cố định)</label>
+                                        <input type="email" name="email"
+                                            class="form-control form-control-lg custom-input input-locked-bold"
+                                            placeholder="<?= $da_dang_nhap ? 'Địa chỉ Gmail' : 'Đăng nhập để hiển thị Gmail cố định' ?>"
+                                            value="<?= htmlspecialchars($_SESSION['email'] ?? '') ?>" readonly
+                                            title="Địa chỉ Gmail cố định theo tài khoản, không thể chỉnh sửa" required>
+                                    </div>
+                                </div>
+
+                                <!-- Nút Submit -->
+                                <?php if ($da_dang_nhap): ?>
+                                <button type="submit" id="btnSubmitBooking"
+                                    class="btn btn-dark w-100 py-3 fs-5 fw-bold btn-submit-custom">
+                                    XÁC NHẬN ĐẶT LỊCH HẸN
+                                </button>
+                                <?php else: ?>
+                                <a href="../Login/login.php" class="btn btn-danger w-100 py-3 fs-5 fw-bold">
+                                    <i class="bi bi-lock-fill me-2"></i>VUI LÒNG ĐĂNG NHẬP TÀI KHOẢN ĐỂ ĐẶT LỊCH
+                                </a>
+                                <?php endif; ?>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- BẢNG LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY LẤY TỪ SQL (CÓ THÊM CỘT THỜI GIAN ĐẶT) -->
+                    <div id="bangLichSuGanDaySQL" class="history-sql-card p-4 p-md-5">
+                        <div
+                            class="d-flex flex-column flex-md-row justify-content-between align-items-md-center border-bottom pb-3 mb-3 gap-3">
+                            <div>
+                                <h4 class="fw-bold text-uppercase mb-1">
+                                    <i class="bi bi-clock-history text-warning me-2"></i>Lịch Sử Đặt Lịch Gần Đây
+                                </h4>
+                                <p class="text-muted small mb-0">
+                                    Hiển thị đầy đủ <strong>Thời gian đặt đơn</strong>, <strong>Giờ hẹn cắt</strong> và
+                                    <strong>Giờ trống kế tiếp (+30p)</strong>
+                                </p>
+                            </div>
+
+                            <ul class="nav nav-pills bg-light p-1 rounded-3" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active btn-sm fw-bold" data-bs-toggle="pill"
+                                        data-bs-target="#tabAllSQL" type="button">
+                                        Lịch Đặt Gần Đây (<?= count($lich_su_gan_day_sql) ?>)
+                                    </button>
+                                </li>
+                                <?php if ($da_dang_nhap): ?>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link btn-sm fw-bold" data-bs-toggle="pill"
+                                        data-bs-target="#tabMySQL" type="button">
+                                        Lịch Đặt Của Tôi (<?= count($lich_su_cua_toi) ?>)
+                                    </button>
+                                </li>
+                                <?php endif; ?>
+                            </ul>
+                        </div>
+
+                        <div class="tab-content">
+                            <div class="tab-pane fade show active" id="tabAllSQL">
+                                <div class="table-responsive">
+                                    <table class="table table-hover table-bordered align-middle small mb-0">
+                                        <thead class="table-dark text-center">
+                                            <tr>
+                                                <th>Mã</th>
+                                                <th>Khách hàng</th>
+                                                <th>Cơ sở Salon</th>
+                                                <th>Gói dịch vụ</th>
+                                                <th>Thợ cắt</th>
+                                                <th>Thời gian đặt</th>
+                                                <th>Giờ hẹn cắt</th>
+                                                <th>Giờ trống kế tiếp (+30p)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php if (count($lich_su_gan_day_sql) > 0): ?>
+                                            <?php foreach ($lich_su_gan_day_sql as $row_s): ?>
+                                            <tr>
+                                                <td class="text-center fw-bold text-secondary">#<?= $row_s['id'] ?></td>
+                                                <td>
+                                                    <strong><?= htmlspecialchars($row_s['ho_ten']) ?></strong><br>
+                                                    <span
+                                                        class="text-muted"><?= htmlspecialchars(cheSDTKhach($row_s['so_dien_thoai'])) ?></span>
+                                                </td>
+                                                <td class="fw-semibold"><?= htmlspecialchars($row_s['salon_id']) ?></td>
+                                                <td>
+                                                    <span
+                                                        class="text-primary fw-semibold"><?= htmlspecialchars($row_s['dich_vu']) ?></span><br>
+                                                    <small
+                                                        class="text-danger fw-bold"><?= number_format($row_s['thanh_tien'], 0, ',', '.') ?>đ</small>
+                                                </td>
+                                                <td class="fw-bold text-dark">
+                                                    <?= htmlspecialchars($row_s['ky_thuat_vien']) ?></td>
+                                                <td class="text-center text-muted">
+                                                    <i
+                                                        class="bi bi-calendar-check me-1"></i><?= $row_s['thoi_gian_tao_dep'] ?>
+                                                </td>
+                                                <td class="text-center">
+                                                    <span
+                                                        class="badge bg-danger bg-opacity-10 text-danger border border-danger px-2 py-1 fw-bold">
+                                                        <i
+                                                            class="bi bi-lock-fill me-1"></i><?= $row_s['thoi_gian_dat_dep'] ?>
+                                                    </span>
+                                                </td>
+                                                <td class="text-center">
+                                                    <div class="d-flex flex-column align-items-center gap-1">
+                                                        <span class="badge badge-slot-next px-2 py-1">
+                                                            <i
+                                                                class="bi bi-clock-fill me-1"></i><?= $row_s['thoi_gian_tiep_theo_dep'] ?>
+                                                        </span>
+                                                        <button type="button"
+                                                            class="btn btn-outline-success btn-sm py-0 px-2 fw-bold"
+                                                            style="font-size: 11px;"
+                                                            onclick="chonNhanhGioLui30p('<?= htmlspecialchars($row_s['ky_thuat_vien']) ?>', '<?= $row_s['iso_tiep_theo'] ?>')">
+                                                            <i class="bi bi-plus-circle me-1"></i>Đặt nối tiếp (+30p)
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                            <?php else: ?>
+                                            <tr>
+                                                <td colspan="8" class="text-center text-muted py-4">Chưa có lịch đặt nào
+                                                    trong cơ sở dữ liệu SQL.</td>
+                                            </tr>
+                                            <?php endif; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <?php if ($da_dang_nhap): ?>
+                            <div class="tab-pane fade" id="tabMySQL">
+                                <div class="table-responsive">
+                                    <table class="table table-striped table-bordered align-middle small mb-0">
+                                        <thead class="table-dark text-center">
+                                            <tr>
+                                                <th>Mã đơn</th>
+                                                <th>Cơ sở Salon</th>
+                                                <th>Dịch vụ & Tổng tiền</th>
+                                                <th>Kỹ thuật viên</th>
+                                                <th>Thời gian đặt</th>
+                                                <th>Thời gian hẹn của bạn</th>
+                                                <th>Trạng thái đơn</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <?php if (count($lich_su_cua_toi) > 0): ?>
+                                            <?php foreach ($lich_su_cua_toi as $my_r): ?>
+                                            <tr>
+                                                <td class="text-center fw-bold">#<?= $my_r['id'] ?></td>
+                                                <td class="fw-bold"><?= htmlspecialchars($my_r['salon_id']) ?></td>
+                                                <td>
+                                                    <span
+                                                        class="fw-semibold text-primary"><?= htmlspecialchars($my_r['dich_vu']) ?></span>
+                                                    <span
+                                                        class="badge bg-light text-danger border ms-1"><?= number_format($my_r['thanh_tien'], 0, ',', '.') ?>đ</span>
+                                                </td>
+                                                <td class="fw-bold"><?= htmlspecialchars($my_r['ky_thuat_vien']) ?></td>
+                                                <td class="text-center text-muted"><?= $my_r['thoi_gian_tao_dep'] ?>
+                                                </td>
+                                                <td class="text-center fw-bold text-success">
+                                                    <?= $my_r['thoi_gian_dat_dep'] ?></td>
+                                                <td class="text-center">
+                                                    <?php if (($my_r['trang_thai'] ?? '') === 'Đã hoàn thành'): ?>
+                                                    <span class="badge bg-success"><i
+                                                            class="bi bi-check-circle-fill me-1"></i>Đã cắt & Hoàn
+                                                        thành</span>
+                                                    <?php else: ?>
+                                                    <span class="badge bg-warning text-dark"><i
+                                                            class="bi bi-hourglass-split me-1"></i>Chờ phục vụ</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                            </tr>
+                                            <?php endforeach; ?>
+                                            <?php else: ?>
+                                            <tr>
+                                                <td colspan="7" class="text-center text-muted py-4">Bạn chưa có đơn đặt
+                                                    lịch nào.</td>
+                                            </tr>
+                                            <?php endif; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <?php $conn_dv->close(); ?>
+
+    <!-- FOOTER CHÂN TRANG -->
+    <!-- ========================================================================= -->
+    <!-- FOOTER CHÂN TRANG CHUYÊN NGHIỆP ĐA THIẾT BỊ (PC 4 CỘT & MOBILE TỐI ƯU)    -->
+    <!-- ========================================================================= -->
+    <style>
+    .cmtc-footer {
+        background: linear-gradient(180deg, #14181d 0%, #0b0d10 100%);
+        color: rgba(255, 255, 255, 0.82);
+        border-top: 2px solid rgba(230, 185, 111, 0.3);
+        position: relative;
+        font-size: 0.92rem;
+    }
+
+    .cmtc-footer-title {
+        color: #e6b96f;
+        font-weight: 800;
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 18px;
+        position: relative;
+        padding-bottom: 10px;
+    }
+
+    .cmtc-footer-title::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 42px;
+        height: 2.5px;
+        background: #e6b96f;
+        border-radius: 2px;
+    }
+
+    @media (max-width: 767.98px) {
+        .cmtc-footer-title::after {
+            left: 50%;
+            transform: translateX(-50%);
+        }
+    }
+
+    .cmtc-footer-link {
+        color: rgba(255, 255, 255, 0.75);
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 10px;
+        transition: all 0.25s ease;
+    }
+
+    .cmtc-footer-link:hover {
+        color: #e6b96f;
+        transform: translateX(5px);
+    }
+
+    .cmtc-social-btn {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(230, 185, 111, 0.3);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        text-decoration: none;
+        transition: all 0.3s ease;
+    }
+
+    .cmtc-social-btn:hover {
+        background: #e6b96f;
+        color: #111 !important;
+        transform: translateY(-4px);
+        box-shadow: 0 5px 15px rgba(230, 185, 111, 0.4);
+    }
+
+    .cmtc-branch-box {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 10px 12px;
+        margin-bottom: 10px;
+    }
+    </style>
+
+    <footer class="cmtc-footer pt-5 pb-4 mt-auto">
+        <div class="container">
+            <div class="row g-4 text-center text-md-start">
+                <!-- CỘT 1: THƯƠNG HIỆU CMTC SALON -->
+                <div class="col-lg-3 col-md-6">
+                    <div class="d-flex align-items-center justify-content-center justify-content-md-start gap-2 mb-3">
+                        <div class="cmtc-brand-logo-circle" style="width: 48px; height: 48px;">
+                            <img src="../images/logo.png"
+                                onerror="this.src='../images/Gemini_Generated_Image_1wira21wira21wir.png'"
+                                alt="CMTC Salon">
+                        </div>
+                        <div class="text-start">
+                            <h5 class="fw-bold text-warning m-0">CMTC SALON</h5>
+                            <small class="text-white-50">Định Hình Phong Cách Phái Mạnh</small>
+                        </div>
+                    </div>
+                    <p class="text-white-50 small lh-lg mb-3">
+                        Hệ thống tạo mẫu tóc nam, uốn nhuộm thời trang và gội đầu dưỡng sinh thư giãn hàng đầu. Cam kết
+                        phục vụ tận tâm bởi đội ngũ Master & Hair Artist chuyên nghiệp.
+                    </p>
+                    <a href="../DatLich/DatLich.php" class="btn-nav-booking py-2 px-4 small">
+                        <i class="bi bi-calendar2-check-fill"></i>Đặt Lịch Cắt Ngay
+                    </a>
+                </div>
+
+                <!-- CỘT 2: HỆ THỐNG CHI NHÁNH & LIÊN HỆ -->
+                <div class="col-lg-4 col-md-6">
+                    <h6 class="cmtc-footer-title">Hệ Thống Chi Nhánh</h6>
+                    <div class="cmtc-branch-box text-start">
+                        <div class="fw-bold text-warning small"><i class="bi bi-geo-alt-fill text-danger me-1"></i>Cơ sở
+                            1 (TP. Vinh):</div>
+                        <div class="text-light small">Số 51 Lý Tự Trọng, Phường Vinh Phú, TP. Vinh, Nghệ An</div>
+                    </div>
+                    <div class="cmtc-branch-box text-start">
+                        <div class="fw-bold text-warning small"><i class="bi bi-geo-alt-fill text-danger me-1"></i>Cơ sở
+                            2 (Kỳ Sơn):</div>
+                        <div class="text-light small">Mường Lống, Huyện Kỳ Sơn, Tỉnh Nghệ An</div>
+                    </div>
+                    <div class="mt-2 small">
+                        <span class="d-block mb-1"><i class="bi bi-telephone-fill text-success me-2"></i>Hotline: <a
+                                href="tel:0971714681"
+                                class="text-warning fw-bold text-decoration-none">0971.714.681</a></span>
+                        <span class="d-block"><i class="bi bi-envelope-fill text-info me-2"></i>Email: <a
+                                href="mailto:xuanconggaming@gmail.com"
+                                class="text-light text-decoration-none">xuanconggaming@gmail.com</a></span>
+                    </div>
+                </div>
+
+                <!-- CỘT 3: LIÊN KẾT NHANH & DỊCH VỤ -->
+                <div class="col-lg-2 col-md-6">
+                    <h6 class="cmtc-footer-title">Menu Nhanh</h6>
+                    <ul class="list-unstyled mb-0 d-flex flex-column align-items-center align-items-md-start">
+                        <li><a href="../TrangChu/index.php" class="cmtc-footer-link"><i
+                                    class="bi bi-chevron-right small text-warning"></i>Trang Chủ</a></li>
+                        <li><a href="../DichVu/DichVu.php" class="cmtc-footer-link"><i
+                                    class="bi bi-chevron-right small text-warning"></i>Dịch Vụ Tóc</a></li>
+                        <li><a href="../BangGia/BangGia.php" class="cmtc-footer-link"><i
+                                    class="bi bi-chevron-right small text-warning"></i>Bảng Giá Combo</a></li>
+                        <li><a href="../ThongTin/ThongTin.php" class="cmtc-footer-link"><i
+                                    class="bi bi-chevron-right small text-warning"></i>Về CMTC Salon</a></li>
+                        <li><a href="../DatLich/DatLich.php" class="cmtc-footer-link"><i
+                                    class="bi bi-chevron-right small text-warning"></i>Đặt Lịch Hẹn</a></li>
+                    </ul>
+                </div>
+
+                <!-- CỘT 4: GIỜ MỞ CỬA & KẾT NỐI MẠNG XÃ HỘI -->
+                <div class="col-lg-3 col-md-6">
+                    <h6 class="cmtc-footer-title">Giờ Làm Việc</h6>
+                    <div class="cmtc-branch-box text-start small mb-3">
+                        <div
+                            class="d-flex justify-content-between py-1 border-bottom border-secondary border-opacity-25">
+                            <span class="text-white-50"><i class="bi bi-clock me-1 text-warning"></i>Thứ 2:</span>
+                            <span class="fw-bold text-white">07:00 – 18:00</span>
+                        </div>
+                        <div class="d-flex justify-content-between py-1 pt-2">
+                            <span class="text-white-50"><i class="bi bi-clock-fill me-1 text-success"></i>Thứ 3 – Chủ
+                                Nhật:</span>
+                            <span class="fw-bold text-warning">07:00 – 20:00</span>
+                        </div>
+                    </div>
+
+                    <h6 class="text-uppercase fw-bold small text-white-50 mb-2">Kết Nối Với Chúng Tôi</h6>
+                    <div class="d-flex justify-content-center justify-content-md-start gap-2">
+                        <a href="https://www.facebook.com/share/1MpxU1LGQT/?mibextid=wwXIfr" target="_blank"
+                            class="cmtc-social-btn" title="Facebook"><i class="bi bi-facebook"></i></a>
+                        <a href="https://www.tiktok.com/@batru2005" target="_blank" class="cmtc-social-btn"
+                            title="TikTok"><i class="bi bi-tiktok"></i></a>
+                        <a href="#" target="_blank" class="cmtc-social-btn" title="YouTube"><i
+                                class="bi bi-youtube"></i></a>
+                        <a href="#" target="_blank" class="cmtc-social-btn" title="Instagram"><i
+                                class="bi bi-instagram"></i></a>
+                        <a href="https://maps.app.goo.gl/fHiCFvcEkEmtZiiT8" target="_blank" class="cmtc-social-btn"
+                            title="Bản đồ Google Maps"><i class="bi bi-geo-alt-fill"></i></a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dòng Bản Quyền Dưới Cùng -->
+            <div class="row mt-4 pt-3 border-top border-secondary border-opacity-25 align-items-center">
+                <div class="col-md-8 text-center text-md-start small text-white-50">
+                    © 2026 <strong class="text-warning">CMTC Salon</strong>. Hệ thống Đặt Lịch & Quản Lý Salon Tóc
+                    Chuyên Nghiệp.
+                </div>
+                <div class="col-md-4 text-center text-md-end mt-2 mt-md-0">
+                    <a href="#" onclick="window.scrollTo({top: 0, behavior: 'smooth'}); return false;"
+                        class="btn btn-outline-warning btn-sm rounded-pill px-3 py-1 small">
+                        <i class="bi bi-arrow-up-short"></i>Lên đầu trang
+                    </a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <!-- SCRIPT XỬ LÝ CHỌN NHIỀU DỊCH VỤ, TÍNH TỔNG TIỀN & CỐ ĐỊNH LÙI 30 PHÚT -->
+    <!-- SCRIPT XỬ LÝ CHỌN NHIỀU DỊCH VỤ, KHÓA NGÀY GIỜ QUÁ KHỨ & CHIA 2 SALON (MỖI SALON 2 THỢ CẮT) -->
+    <script>
+    const tinhThanhSelect = document.getElementById('tinhThanh');
+    const quanHuyenHidden = document.getElementById('quanHuyenHidden');
+    const salonContainer = document.getElementById('salonContainer');
+    const kyThuatVienSelect = document.getElementById('kyThuatVien');
+    const ngayGioInput = document.getElementById('ngayGioInput');
+    const khungCanhBao = document.getElementById('khungCanhBaoLichBan');
+    const goiYKhungGioTiepTheo = document.getElementById('goiYKhungGioTiepTheo');
+    const btnSubmit = document.getElementById('btnSubmitBooking');
+
+    const danhSachLichBan = <?= json_encode($lich_ban_arr, JSON_UNESCAPED_UNICODE) ?>;
+    const danhSachLichDaDat = <?= json_encode($lich_da_dat_arr, JSON_UNESCAPED_UNICODE) ?>;
+    let provincesData = [];
+
+    // Phân chia cố định: 2 Cơ sở Salon, mỗi Salon có đúng 2 Nhân viên cắt
+    const DANH_SACH_THO_THEO_SALON = {
+        "TP. Vinh": [{
+                value: "Vừ Xuân Công",
+                label: "Vừ Xuân Công (Hair Artist - Cơ sở Vinh)"
+            },
+            {
+                value: "Moong Văn Minh",
+                label: "Moong Văn Minh (Master - Cơ sở Vinh)"
+            }
+        ],
+        "Huyện Kỳ Sơn": [{
+                value: "Lầu Bá Trừ",
+                label: "Lầu Bá Trừ (Stylist - Cơ sở Kỳ Sơn)"
+            },
+            {
+                value: "Hờ Bá Chính",
+                label: "Hờ Bá Chính (Stylist - Cơ sở Kỳ Sơn)"
+            }
+        ]
+    };
+
+    // 1. VÔ HIỆU HÓA CÁC NGÀY GIỜ TRƯỚC THỜI ĐIỂM HIỆN TẠI
+    function layChuoiNgayGioHienTaiISO() {
+        const now = new Date();
+        const nam = now.getFullYear();
+        const thang = String(now.getMonth() + 1).padStart(2, '0');
+        const ngay = String(now.getDate()).padStart(2, '0');
+        const gio = String(now.getHours()).padStart(2, '0');
+        const phut = String(now.getMinutes()).padStart(2, '0');
+        return `${nam}-${thang}-${ngay}T${gio}:${phut}`;
+    }
+
+    function capNhatMinNgayGioHienTai() {
+        if (!ngayGioInput) return;
+        const minISO = layChuoiNgayGioHienTaiISO();
+        ngayGioInput.min = minISO;
+    }
+
+    // Khởi chạy khóa ngày giờ quá khứ ngay khi tải trang và cập nhật mỗi 30 giây
+    capNhatMinNgayGioHienTai();
+    setInterval(capNhatMinNgayGioHienTai, 30000);
+
+    function laThoiGianTrongQuaKhu(isoString) {
+        if (!isoString) return false;
+        const thoiGianChon = new Date(isoString);
+        const hienTai = new Date();
+        // Cho phép sai số 1 phút trong lúc thao tác chọn trên form
+        hienTai.setSeconds(0, 0);
+        return thoiGianChon.getTime() < (hienTai.getTime() - 60000);
+    }
+
+    function capNhatDanhSachDichVu() {
+        const checkboxes = document.querySelectorAll('.chk-dich-vu:checked');
+        const textTomTat = document.getElementById('textTomTatDichVu');
+        const khungBadges = document.getElementById('khungTheDichVuDaChon');
+        const tongTienEl = document.getElementById('tongTienHienThi');
+
+        let dsTen = [];
+        let tongTien = 0;
+
+        checkboxes.forEach(chk => {
+            dsTen.push(chk.value);
+            tongTien += parseFloat(chk.getAttribute('data-gia') || 0);
+        });
+
+        if (dsTen.length === 0) {
+            textTomTat.innerHTML = 'Bấm để tích chọn 1 hoặc nhiều dịch vụ...';
+            textTomTat.className = 'text-muted';
+            khungBadges.innerHTML = '';
+            tongTienEl.innerText = '0 VNĐ';
+        } else {
+            textTomTat.innerHTML = `Đã chọn <strong>${dsTen.length} dịch vụ</strong>`;
+            textTomTat.className = 'text-dark fw-semibold';
+            khungBadges.innerHTML = dsTen.map(t =>
+                `<span class="selected-dv-badge"><i class="bi bi-check2 me-1"></i>${t}</span>`).join('');
+            tongTienEl.innerText = 'Tổng: ' + tongTien.toLocaleString('vi-VN') + ' VNĐ';
+        }
+    }
+
+    function kiemTraTruocKhiGui() {
+        const checkboxes = document.querySelectorAll('.chk-dich-vu:checked');
+        if (checkboxes.length === 0) {
+            alert('⚠️ Quý khách vui lòng tích chọn ít nhất 1 dịch vụ trước khi đặt lịch!');
+            return false;
+        }
+
+        const radioSalon = document.querySelector('input[name="salon_id"]:checked');
+        if (!radioSalon) {
+            alert('⚠️ Quý khách vui lòng chọn 1 trong 2 Cơ sở Salon!');
+            return false;
+        }
+
+        if (!kyThuatVienSelect.value) {
+            alert('⚠️ Quý khách vui lòng chọn Nhân viên cắt tóc tại Salon!');
+            return false;
+        }
+
+        if (!ngayGioInput.value || laThoiGianTrongQuaKhu(ngayGioInput.value)) {
+            alert('❌ Không thể đặt lịch vào ngày giờ đã qua! Vui lòng chọn ngày giờ từ thời điểm hiện tại trở đi.');
+            capNhatMinNgayGioHienTai();
+            ngayGioInput.focus();
+            return false;
+        }
+
+        return true;
+    }
+
+    fetch('https://provinces.open-api.vn/api/?depth=1')
+        .then(response => response.json())
+        .then(data => {
+            provincesData = data;
+            tinhThanhSelect.innerHTML = '<option selected disabled value="">Chọn Tỉnh/Thành Phố</option>';
+            data.forEach(province => {
+                tinhThanhSelect.innerHTML += `<option value="${province.name}">${province.name}</option>`;
+            });
+        });
+
+    tinhThanhSelect.addEventListener('change', function() {
+        const provinceName = this.value;
+
+        if (provinceName.includes('Nghệ An')) {
+            salonContainer.innerHTML = `
+                    <div class="col-md-6">
+                        <label class="salon-card">
+                            <input type="radio" name="salon_id" value="CMTC Salon - Cơ sở Vinh (Số 51 Lý Tự Trọng, TP. Vinh)" data-khu-vuc="TP. Vinh" required onchange="enableKTV(this)">
+                            <div class="salon-info">
+                                <h6>CMTC Salon - Cơ sở 1 (TP. Vinh)</h6>
+                                <p class="mb-1"><i class="bi bi-geo-alt-fill text-danger"></i> Số 51 Lý Tự Trọng, Phường Vinh Phú, TP. Vinh, Nghệ An</p>
+                                <span class="badge bg-dark text-warning border border-warning" style="font-size: 11px;">
+                                    <i class="bi bi-scissors me-1"></i>2 Thợ: Vừ Xuân Công • Moong Văn Minh
+                                </span>
+                            </div>
+                        </label>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="salon-card">
+                            <input type="radio" name="salon_id" value="CMTC Salon - Cơ sở Kỳ Sơn (Mường Lống, Kỳ Sơn)" data-khu-vuc="Huyện Kỳ Sơn" required onchange="enableKTV(this)">
+                            <div class="salon-info">
+                                <h6>CMTC Salon - Cơ sở 2 (Kỳ Sơn)</h6>
+                                <p class="mb-1"><i class="bi bi-geo-alt-fill text-danger"></i> Mường Lống, Huyện Kỳ Sơn, Nghệ An</p>
+                                <span class="badge bg-dark text-warning border border-warning" style="font-size: 11px;">
+                                    <i class="bi bi-scissors me-1"></i>2 Thợ: Lầu Bá Trừ • Hờ Bá Chính
+                                </span>
+                            </div>
+                        </label>
+                    </div>
+                `;
+            kyThuatVienSelect.disabled = true;
+            kyThuatVienSelect.innerHTML =
+                '<option selected disabled value="">Vui lòng tích chọn 1 trong 2 Cơ sở Salon ở trên</option>';
+        } else {
+            salonContainer.innerHTML = `
+                    <div class="col-12">
+                        <div class="salon-warning-box text-center py-4 rounded-3 border">
+                            <p class="mb-0 text-muted"><i class="bi bi-info-circle me-2"></i>Rất tiếc, CMTC Salon hiện chưa có cơ sở tại <strong>${provinceName}</strong>. Hẹn gặp bạn trong tương lai!</p>
+                        </div>
+                    </div>
+                `;
+            kyThuatVienSelect.disabled = true;
+            kyThuatVienSelect.innerHTML =
+                '<option selected disabled value="">Vui lòng chọn Cơ sở Salon trước</option>';
+        }
+    });
+
+    // 2. HIỂN THỊ ĐÚNG 2 NHÂN VIÊN CẮT TÓC TƯƠNG ỨNG VỚI SALON ĐÃ CHỌN
+    function enableKTV(radioEl) {
+        let khuVuc = 'TP. Vinh';
+        if (radioEl && quanHuyenHidden) {
+            khuVuc = radioEl.getAttribute('data-khu-vuc') || 'TP. Vinh';
+            quanHuyenHidden.value = khuVuc;
+        } else if (quanHuyenHidden && quanHuyenHidden.value) {
+            khuVuc = quanHuyenHidden.value;
+        }
+
+        const dsThoCuaCoSo = DANH_SACH_THO_THEO_SALON[khuVuc] || DANH_SACH_THO_THEO_SALON["TP. Vinh"];
+        kyThuatVienSelect.disabled = false;
+        kyThuatVienSelect.classList.remove('text-muted');
+        kyThuatVienSelect.classList.add('text-dark', 'fw-semibold');
+
+        let optionsHtml =
+        `<option selected disabled value="">-- Chọn 1 trong 2 nhân viên cắt tại ${khuVuc} --</option>`;
+        dsThoCuaCoSo.forEach(tho => {
+            optionsHtml += `<option value="${tho.value}">${tho.label}</option>`;
+        });
+        kyThuatVienSelect.innerHTML = optionsHtml;
+        khungCanhBao.classList.add("d-none");
+    }
+
+    function doiGioSangPhut(strGio) {
+        const parts = strGio.split(':');
+        return parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+    }
+
+    function doiPhutSangGio(tongPhut) {
+        const h = Math.floor(tongPhut / 60);
+        const m = tongPhut % 60;
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
+
+    function chonNhanhGioLui30p(tenTho, isoTimeTiepTheo) {
+        // Kiểm tra nếu giờ nối tiếp đó đã nằm trong quá khứ thì tự động lấy giờ hiện tại
+        const minHienTai = layChuoiNgayGioHienTaiISO();
+        const thoiGianGan = laThoiGianTrongQuaKhu(isoTimeTiepTheo) ? minHienTai : isoTimeTiepTheo;
+
+        // Tự động xác định cơ sở của thợ được chọn
+        let khuVucTho = "TP. Vinh";
+        if (DANH_SACH_THO_THEO_SALON["Huyện Kỳ Sơn"].some(t => t.value === tenTho)) {
+            khuVucTho = "Huyện Kỳ Sơn";
+        }
+
+        // Nếu chưa chọn tỉnh Nghệ An, tự động gán Nghệ An và tích chọn đúng cơ sở của thợ đó
+        if (!tinhThanhSelect.value || !tinhThanhSelect.value.includes('Nghệ An')) {
+            const optNgheAn = Array.from(tinhThanhSelect.options).find(o => o.value.includes('Nghệ An'));
+            if (optNgheAn) {
+                tinhThanhSelect.value = optNgheAn.value;
+                tinhThanhSelect.dispatchEvent(new Event('change'));
+            }
+        }
+
+        const radioTarget = document.querySelector(`input[name="salon_id"][data-khu-vuc="${khuVucTho}"]`);
+        if (radioTarget) {
+            radioTarget.checked = true;
+            enableKTV(radioTarget);
+        }
+
+        kyThuatVienSelect.value = tenTho;
+        ngayGioInput.value = thoiGianGan;
+        kiemTraVaCoDinhLui30Phut(false);
+        ngayGioInput.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+    }
+
+    function kiemTraVaCoDinhLui30Phut(tuDongDienKhiChonTho = false) {
+        capNhatMinNgayGioHienTai();
+        const ktv = kyThuatVienSelect.value;
+        let dtVal = ngayGioInput.value;
+
+        // Kiểm tra chặn ngay lập tức nếu khách chọn ngày giờ trước thời điểm hiện tại
+        if (dtVal && laThoiGianTrongQuaKhu(dtVal)) {
+            const minHienTai = layChuoiNgayGioHienTaiISO();
+            khungCanhBao.className = "alert alert-danger fw-bold small mb-4";
+            khungCanhBao.innerHTML =
+                `❌ KHÔNG THỂ ĐẶT LỊCH QUÁ KHỨ: Ngày giờ bạn vừa chọn đã qua! Vui lòng chọn thời gian từ <strong>${minHienTai.replace('T', ' ')}</strong> trở đi.`;
+            khungCanhBao.classList.remove("d-none");
+            goiYKhungGioTiepTheo.innerHTML =
+                `<span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Ngày giờ không hợp lệ (đã qua thời điểm hiện tại)</span>`;
+            ngayGioInput.value = minHienTai;
+            dtVal = minHienTai;
+        }
+
+        if (!ktv) return;
+
+        if (!dtVal && tuDongDienKhiChonTho && ktv !== 'Chọn thợ bất kỳ') {
+            const cacDonCuaTho = danhSachLichDaDat.filter(item => item.ky_thuat_vien === ktv);
+            if (cacDonCuaTho.length > 0) {
+                const donCuoi = cacDonCuaTho[cacDonCuaTho.length - 1];
+                if (!laThoiGianTrongQuaKhu(donCuoi.ngay_gio_lui_30p)) {
+                    ngayGioInput.value = donCuoi.ngay_gio_lui_30p;
+                    dtVal = ngayGioInput.value;
+                    goiYKhungGioTiepTheo.innerHTML =
+                        `<i class="bi bi-pin-angle-fill me-1"></i>Đã tự động xếp nối tiếp +30p sau khách <strong>${donCuoi.ho_ten}</strong> (đặt lúc ${donCuoi.gio_hen} ngày ${donCuoi.ngay_hen})!`;
+                }
+            }
+        }
+
+        const lichBanCuaTho = danhSachLichBan.filter(item => item.ky_thuat_vien === ktv);
+        const lichKhachTruocCuaTho = danhSachLichDaDat.filter(item => item.ky_thuat_vien === ktv && ktv !==
+            'Chọn thợ bất kỳ');
+
+        if (!dtVal) {
+            let htmlThongBao = [];
+            if (lichBanCuaTho.length > 0) {
+                let textBan = lichBanCuaTho.map(b =>
+                        `Ngày ${b.ngay_ban} (${b.gio_bat_dau.slice(0,5)} - ${b.gio_ket_thuc.slice(0,5)}: ${b.ly_do})`)
+                    .join('; ');
+                htmlThongBao.push(`<strong>Giờ bận cá nhân:</strong> ${textBan}`);
+            }
+            if (lichKhachTruocCuaTho.length > 0) {
+                let textDat = lichKhachTruocCuaTho.slice(-4).map(d =>
+                    `Ngày ${d.ngay_hen} khách đặt lúc <strong>${d.gio_hen}</strong> &rarr; Giờ đặt kế tiếp (+30p): <strong>${d.gio_lui_30p}</strong>`
+                ).join('<br>• ');
+                htmlThongBao.push(`<strong>Khách trước đã đặt:</strong><br>• ${textDat}`);
+            }
+            if (htmlThongBao.length > 0) {
+                khungCanhBao.className = "alert alert-warning small mb-4";
+                khungCanhBao.innerHTML =
+                    `<i class="bi bi-clock-history me-1"></i><strong>Lịch của thợ ${ktv}:</strong><br>` + htmlThongBao
+                    .join('<br>');
+                khungCanhBao.classList.remove("d-none");
+            } else {
+                khungCanhBao.classList.add("d-none");
+            }
+            return;
+        }
+
+        let [ngayChon, gioChon] = dtVal.split('T');
+        let phutChon = doiGioSangPhut(gioChon);
+
+        if (ktv !== 'Chọn thợ bất kỳ') {
+            const cacDonTrongNgay = danhSachLichDaDat
+                .filter(item => item.ky_thuat_vien === ktv && item.ngay_hen === ngayChon)
+                .sort((a, b) => doiGioSangPhut(a.gio_hen) - doiGioSangPhut(b.gio_hen));
+
+            let daTuDongLui = false;
+            let thongTinKhachTruoc = null;
+
+            for (let i = 0; i < cacDonTrongNgay.length; i++) {
+                const don = cacDonTrongNgay[i];
+                const phutKhachTruoc = doiGioSangPhut(don.gio_hen);
+                if (Math.abs(phutChon - phutKhachTruoc) < 30) {
+                    phutChon = phutKhachTruoc + 30;
+                    daTuDongLui = true;
+                    thongTinKhachTruoc = don;
+                }
+            }
+
+            if (daTuDongLui && thongTinKhachTruoc) {
+                gioChon = doiPhutSangGio(phutChon);
+                ngayGioInput.value = `${ngayChon}T${gioChon}`;
+                khungCanhBao.className = "alert alert-warning border-warning fw-semibold small mb-4";
+                khungCanhBao.innerHTML =
+                    `<i class="bi bi-arrow-clockwise fs-6 me-1 text-dark"></i><strong>ĐÃ TỰ ĐỘNG XẾP LÙI 30 PHÚT:</strong> Khách hàng <strong>${thongTinKhachTruoc.ho_ten}</strong> đã đặt thợ <strong>${ktv}</strong> lúc <strong>${thongTinKhachTruoc.gio_hen}</strong>. Hệ thống đã chuyển giờ hẹn của bạn sang <strong>${gioChon}</strong> để không trùng lịch!`;
+                khungCanhBao.classList.remove("d-none");
+                goiYKhungGioTiepTheo.innerHTML =
+                    `<i class="bi bi-check2-circle me-1"></i>Giờ hẹn cố định: <strong>${gioChon} (${ngayChon})</strong>`;
+                if (btnSubmit) btnSubmit.disabled = false;
+                return;
+            }
+        }
+
+        const biTrungBan = danhSachLichBan.find(item =>
+            item.ky_thuat_vien === ktv &&
+            item.ngay_ban === ngayChon &&
+            gioChon >= item.gio_bat_dau.slice(0, 5) &&
+            gioChon <= item.gio_ket_thuc.slice(0, 5)
+        );
+
+        if (biTrungBan) {
+            khungCanhBao.className = "alert alert-danger fw-bold small mb-4";
+            khungCanhBao.innerHTML =
+                `❌ KHÔNG THỂ ĐẶT GIỜ NÀY: Thợ ${ktv} đang bận từ ${biTrungBan.gio_bat_dau.slice(0,5)} đến ${biTrungBan.gio_ket_thuc.slice(0,5)} ngày ${ngayChon} (${biTrungBan.ly_do}). Vui lòng chọn giờ ngoài khung này!`;
+            khungCanhBao.classList.remove("d-none");
+            if (btnSubmit) btnSubmit.disabled = true;
+            return;
+        }
+
+        khungCanhBao.className = "alert alert-info small mb-4";
+        khungCanhBao.innerHTML =
+            `<i class="bi bi-check-circle-fill text-success me-1"></i>Khung giờ <strong>${gioChon} ngày ${ngayChon}</strong> với thợ <strong>${ktv}</strong> hoàn toàn hợp lệ!`;
+        khungCanhBao.classList.remove("d-none");
+        goiYKhungGioTiepTheo.innerHTML =
+            `<i class="bi bi-check2-all me-1"></i>Khung giờ hợp lệ: <strong>${gioChon} (${ngayChon})</strong>`;
+        if (btnSubmit) btnSubmit.disabled = false;
+    }
+
+    kyThuatVienSelect.addEventListener('change', function() {
+        kiemTraVaCoDinhLui30Phut(true);
+    });
+    ngayGioInput.addEventListener('change', function() {
+        kiemTraVaCoDinhLui30Phut(false);
+    });
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+
+</html>

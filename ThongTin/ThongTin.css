@@ -1,0 +1,34 @@
+/* --- CẤU HÌNH LOGO TRÊN NAVBAR --- */
+.navbar-brand { height: 55px; overflow: hidden; display: flex; align-items: center; }
+.logo-navbar { height: 120px; width: auto; filter: invert(1); mix-blend-mode: screen; margin-top: -20px; }
+
+/* --- HIỆU ỨNG TRANG THÔNG TIN --- */
+
+/* Hiệu ứng nhấp nhô cho các icon Giá trị cốt lõi */
+.gia-tri-card {
+    transition: transform 0.3s ease;
+}
+
+.gia-tri-card:hover {
+    transform: translateY(-10px);
+}
+
+.gia-tri-card i {
+    transition: color 0.3s ease;
+}
+
+.gia-tri-card:hover i {
+    color: #242c25 !important; /* Đổi sang màu rêu đậm của tiệm khi hover */
+}
+
+/* Ẩn viền thừa của iframe bản đồ */
+.map-container iframe {
+    display: block;
+    border-radius: 1rem;
+}
+
+/* --- TRANG TRÍ FOOTER --- */
+.footer-custom { background-color: #242c25; }
+.tracking-wide { letter-spacing: 1px; }
+.icon-mang-xa-hoi { transition: all 0.3s ease; }
+.icon-mang-xa-hoi:hover { color: #0d6efd !important; transform: translateY(-3px); }

@@ -1,0 +1,125 @@
+/* --- CẤU HÌNH LOGO TRÊN NAVBAR --- */
+.navbar-brand {
+  height: 55px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.logo-navbar {
+  height: 120px;
+  width: auto;
+  filter: invert(1);
+  mix-blend-mode: screen;
+  margin-top: -20px;
+}
+
+/* --- TÙY CHỈNH FORM ĐẶT LỊCH --- */
+
+/* Tiêu đề (Label) có chứa icon màu vàng đồng */
+.form-label-custom {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #333;
+}
+.form-label-custom i {
+  color: #c09e6c; /* Màu vàng đồng nhạt chuẩn thiết kế */
+  font-size: 1.1rem;
+  vertical-align: middle;
+}
+
+/* Các ô input và thẻ select */
+.custom-input {
+  font-size: 0.95rem;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: 12px 15px;
+  box-shadow: none !important; /* Tắt viền xanh mặc định của Bootstrap khi click vào */
+}
+
+.custom-input:focus {
+  border-color: #c09e6c;
+}
+
+/* Khung cảnh báo chọn Salon màu đỏ nhạt */
+.salon-warning-box {
+  background-color: #ffffff;
+  border-color: #dee2e6 !important;
+}
+
+/* Nút Submit Đen viền Vàng đồng */
+.btn-submit-custom {
+  background-color: #0c0c0c;
+  color: #e6b96f; /* Chữ màu vàng đồng */
+  border: none;
+  border-radius: 6px;
+  transition: all 0.3s ease;
+}
+
+.btn-submit-custom:hover {
+  background-color: #1a1a1a;
+  color: #fff;
+}
+
+/* --- TRANG TRÍ FOOTER --- */
+.footer-custom {
+  background-color: #242c25;
+}
+.tracking-wide {
+  letter-spacing: 1px;
+}
+.icon-mang-xa-hoi {
+  transition: all 0.3s ease;
+}
+.icon-mang-xa-hoi:hover {
+  color: #0d6efd !important;
+  transform: translateY(-3px);
+}
+
+/* --- TÙY CHỈNH THẺ CHỌN SALON (SALON CARDS) --- */
+.salon-card {
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  padding: 15px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background-color: #fff;
+  display: block;
+  position: relative;
+}
+
+.salon-card:hover {
+  border-color: #c09e6c;
+  box-shadow: 0 4px 12px rgba(192, 158, 108, 0.15);
+}
+
+/* Ẩn nút radio mặc định */
+.salon-card input[type="radio"] {
+  display: none;
+}
+
+/* Hiệu ứng khi thẻ Salon được chọn */
+.salon-card input[type="radio"]:checked + .salon-info {
+  color: #c09e6c;
+}
+
+.salon-card:has(input[type="radio"]:checked) {
+  border-color: #c09e6c;
+  background-color: #fdfaf6;
+  box-shadow: 0 4px 12px rgba(192, 158, 108, 0.2);
+}
+
+.salon-info h6 {
+  margin-bottom: 5px;
+  font-weight: 700;
+  color: #333;
+}
+
+.salon-info p {
+  margin-bottom: 0;
+  font-size: 0.85rem;
+  color: #6c757d;
+}
+
+.salon-card input[type="radio"]:checked + .salon-info h6 {
+  color: #c09e6c;
+}

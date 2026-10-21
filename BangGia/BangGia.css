@@ -1,0 +1,191 @@
+/* --- CẤU HÌNH LOGO TRÊN NAVBAR --- */
+.navbar-brand {
+  height: 55px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+.logo-navbar {
+  height: 120px;
+  width: auto;
+  filter: invert(1);
+  mix-blend-mode: screen;
+  margin-top: -20px;
+}
+
+/* --- THIẾT KẾ BẢNG GIÁ MENU CLASSIC --- */
+
+/* Nền khung menu xanh rêu đậm */
+.menu-khung-reu {
+  background-color: #0b2e23; /* Mã màu xanh rêu trích xuất từ ảnh */
+  border-radius: 8px;
+  border: 2px solid #a38c5b; /* Viền ngoài vàng đồng */
+}
+
+/* Tạo thêm một viền mỏng bên trong cho đúng chất cổ điển */
+.menu-vien-trang-tri {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 10px;
+  right: 10px;
+  border: 1px solid rgba(163, 140, 91, 0.4);
+  pointer-events: none; /* Không cản trở click */
+  border-radius: 4px;
+}
+
+/* Logo bên trong khung bảng giá */
+.menu-logo-inner {
+  height: 150px;
+  filter: invert(1); /* Biến logo đen thành trắng */
+  /* Thêm bộ lọc sepia để ngả sang màu vàng đồng cho đồng bộ */
+  mix-blend-mode: screen;
+}
+
+/* Màu chữ vàng đồng đặc trưng */
+.text-vang-dong {
+  color: #c9b179 !important;
+}
+
+/* Font chữ Serif cho tiêu đề lớn */
+.menu-title {
+  font-family: "Playfair Display", serif;
+  color: #c9b179;
+  letter-spacing: 1.5px;
+  font-weight: 700;
+}
+
+/* Đường kẻ ngang ngăn cách */
+.menu-divider {
+  height: 1px;
+  background: linear-gradient(to right, transparent, #c9b179, transparent);
+  margin-bottom: 25px;
+}
+
+/* Căn chỉnh kích thước chữ cho đẹp trên mobile */
+.master-subtext {
+  font-size: 0.65rem;
+  display: block;
+  margin-top: -2px;
+}
+
+.menu-item h5 {
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
+}
+
+.menu-item small {
+  font-size: 0.75rem;
+  letter-spacing: 0.5px;
+}
+
+/* Xử lý khoảng cách trên Mobile */
+@media (max-width: 768px) {
+  .menu-headers {
+    font-size: 0.8rem;
+  }
+  .menu-item {
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.1);
+    padding-bottom: 15px;
+  }
+  .menu-item:last-child {
+    border-bottom: none;
+  }
+}
+
+/* --- TRANG TRÍ FOOTER --- */
+.footer-custom {
+  background-color: #242c25;
+}
+.tracking-wide {
+  letter-spacing: 1px;
+}
+.icon-mang-xa-hoi {
+  transition: all 0.3s ease;
+}
+.icon-mang-xa-hoi:hover {
+  color: #c9b179 !important;
+  transform: translateY(-3px);
+}
+
+/* --- BỔ SUNG CSS CHO PHẦN GỘI & RELAX --- */
+
+/* Danh sách chi tiết của Combo Gội */
+.combo-list {
+  list-style-type: disc;
+  padding-left: 20px;
+  font-size: 0.85rem;
+  margin-bottom: 25px;
+}
+
+.combo-list li {
+  margin-bottom: 3px;
+}
+
+/* Nhãn "Tiết kiệm" nổi bật */
+.badge-tiet-kiem {
+  background-color: #c9b179;
+  color: #0b2e23;
+  font-size: 0.7rem;
+  padding: 4px 8px;
+  vertical-align: middle;
+  border-radius: 4px;
+}
+
+/* Khung viền vàng đồng cho Dịch vụ lẻ */
+.dich-vu-le-box {
+  border: 1px solid #c9b179;
+  border-radius: 10px;
+  padding: 25px 20px;
+}
+
+/* Gạch dưới từng dòng dịch vụ lẻ */
+.dich-vu-le-item {
+  border-bottom: 1px dashed rgba(201, 177, 121, 0.3);
+  padding: 12px 0;
+}
+
+/* Font chữ nhỏ cho phần thời gian (35P) */
+.time-text {
+  font-size: 0.7rem;
+  line-height: 1;
+  margin-top: -5px;
+}
+
+/* --- HIỆU ỨNG NÚT NHỊP ĐẬP PHÁT SÁNG --- */
+.nut-dat-lich {
+  background: linear-gradient(45deg, #ff512f, #dd2476) !important;
+  border: none !important;
+  border-radius: 30px !important;
+  text-transform: uppercase;
+  font-weight: bold;
+  color: white !important; /* Đổi rgb(255,1,1) thành white */
+  box-shadow: 0 4px 15px rgba(221, 36, 118, 0.4);
+  transition: all 0.3s ease;
+  animation: pulse-btn 2s infinite;
+}
+
+.nut-dat-lich:hover {
+  background: linear-gradient(45deg, #dd2476, #ff512f) !important;
+  transform: translateY(-5px) scale(1.05);
+}
+
+@keyframes pulse-btn {
+  0% {
+    box-shadow: 0 0 0 0 rgba(221, 36, 118, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 15px rgba(221, 36, 118, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(221, 36, 118, 0);
+  }
+}
+
+/* --- HIỆU ỨNG CHỮ CHUYỂN SẮC --- */
+.text-gradient {
+  background: linear-gradient(135deg, #0d6efd 0%, #d63384 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: inline-block;
+}

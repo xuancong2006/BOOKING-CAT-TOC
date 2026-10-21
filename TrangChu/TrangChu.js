@@ -1,0 +1,1 @@
+console.log("Trang chủ CMTC đã tải thành công!");

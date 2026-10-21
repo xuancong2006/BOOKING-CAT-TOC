@@ -1,0 +1,55 @@
+/* --- CẤU HÌNH LOGO TRÊN NAVBAR --- */
+.navbar-brand {
+    height: 55px;       
+    overflow: hidden;   
+    display: flex;
+    align-items: center;
+}
+
+.logo-navbar {
+    height: 120px;      
+    width: auto;
+    filter: invert(1); 
+    mix-blend-mode: screen; 
+    margin-top: -20px;  
+}
+
+/* --- HIỆU ỨNG THẺ DỊCH VỤ --- */
+.the-dich-vu {
+    border-radius: 15px;
+    border: 1px solid #eaeaea;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+}
+
+.the-dich-vu:hover {
+    transform: translateY(-10px);
+    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1) !important;
+    border-color: #0d6efd;
+}
+
+/* Ép kích thước ảnh dịch vụ cân bằng */
+.the-dich-vu .card-img-top {
+    height: 220px;                 
+    object-fit: cover;             
+    border-top-left-radius: 14px;  
+    border-top-right-radius: 14px;
+}
+
+/* --- TRANG TRÍ FOOTER --- */
+.footer-custom {
+    background-color: #242c25; 
+}
+
+.tracking-wide {
+    letter-spacing: 1px;
+}
+
+.icon-mang-xa-hoi {
+    transition: all 0.3s ease;
+}
+
+.icon-mang-xa-hoi:hover {
+    color: #0d6efd !important; 
+    transform: translateY(-3px); 
+}
