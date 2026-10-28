@@ -606,6 +606,66 @@ if (isset($_GET['xuat_excel'])) {
         margin: 1px 2px;
     }
     </style>
+    <!-- ==================== CẤU HÌNH WEB APP (PWA) CHO IPHONE & ANDROID ==================== -->
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CMTC Salon">
+    <meta name="application-name" content="CMTC Salon">
+    <meta name="theme-color" content="#0f1216">
+
+    <!-- Icon hiển thị trên màn hình chính iPhone -->
+    <link rel="apple-touch-icon" href="../images/logo.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="../images/logo.png">
+    <link rel="icon" type="image/png" href="../images/logo.png">
+    <link rel="manifest" href="../manifest.json">
+
+    <style>
+    /* Tối ưu giao diện App toàn màn hình trên iPhone (Tránh tai thỏ / Dynamic Island & vạch Home) */
+    @media all and (display-mode: standalone) {
+        body {
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+
+        .cmtc-navbar {
+            padding-top: calc(10px + env(safe-area-inset-top, 0px)) !important;
+        }
+
+        .cmtc-mobile-bottom-bar {
+            height: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+            padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+        }
+    }
+    </style>
+
+    <script>
+    // Giữ toàn bộ thao tác bấm chuyển trang nằm gọn bên trong App iPhone (Không bị văng ra Safari)
+    (function() {
+        const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+        if (isStandalone) {
+            document.addEventListener('click', function(e) {
+                const a = e.target.closest('a');
+                if (!a) return;
+                const href = a.getAttribute('href');
+                if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith(
+                        'tel:') || href.startsWith('mailto:') || a.getAttribute('target') === '_blank' || a
+                    .hasAttribute('data-bs-toggle')) {
+                    return;
+                }
+                if (a.hostname === window.location.hostname || !a.hostname) {
+                    e.preventDefault();
+                    window.location.href = a.href;
+                }
+            }, false);
+        }
+    })();
+    </script>
+    <!-- ===================================================================================== -->
 </head>
 
 <body>

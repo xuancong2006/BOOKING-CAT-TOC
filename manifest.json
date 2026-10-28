@@ -1,0 +1,25 @@
+{
+  "name": "CMTC Salon - Đặt Lịch Cắt Tóc",
+  "short_name": "CMTC Salon",
+  "description": "Ứng dụng đặt lịch cắt tóc & chăm sóc tóc nam chuyên nghiệp CMTC Salon",
+  "start_url": "./TrangChu/index.php",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f1216",
+  "theme_color": "#0f1216",
+  "icons": [
+    {
+      "src": "./images/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./images/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
