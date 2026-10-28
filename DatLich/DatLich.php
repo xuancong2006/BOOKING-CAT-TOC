@@ -1,5 +1,6 @@
 <?php
 session_start();
+date_default_timezone_set('Asia/Ho_Chi_Minh');
 
 if ($_SERVER['HTTP_HOST'] == 'localhost' || strpos($_SERVER['HTTP_HOST'], '127.0.0.1') !== false) {
     $conn_dv = new mysqli("localhost", "root", "", "cmtc_salon");
@@ -98,28 +99,6 @@ if ($res_da_dat && $res_da_dat->num_rows > 0) {
 }
 
 $da_dang_nhap = isset($_SESSION['user_id']);
-$thong_tin_vip = null;
-if ($da_dang_nhap) {
-    $sdt_check_vip = $conn_dv->real_escape_string($_SESSION['so_dien_thoai'] ?? '');
-    $em_check_vip  = $conn_dv->real_escape_string($_SESSION['email'] ?? '');
-    $conn_dv->query("CREATE TABLE IF NOT EXISTS `khach_hang_vip` (
-      `id` int(11) NOT NULL AUTO_INCREMENT,
-      `ho_ten` varchar(100) NOT NULL,
-      `so_dien_thoai` varchar(20) NOT NULL UNIQUE,
-      `email` varchar(100) DEFAULT NULL,
-      `so_lan_cat` int(11) DEFAULT 1,
-      `tong_chi_tieu` decimal(15,0) DEFAULT 0,
-      `hang_vip` varchar(50) DEFAULT 'VIP Bạc',
-      `phan_tram_giam` int(11) DEFAULT 10,
-      `uu_dai_dac_quyen` varchar(255) DEFAULT 'Giảm 10% tổng hóa đơn + Tặng gội massage thảo dược',
-      `ngay_cap_nhat` timestamp DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      PRIMARY KEY (`id`)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
-    $res_my_vip = $conn_dv->query("SELECT * FROM khach_hang_vip WHERE (so_dien_thoai != '' AND so_dien_thoai = '$sdt_check_vip') OR (email != '' AND email = '$em_check_vip') LIMIT 1");
-    if ($res_my_vip && $res_my_vip->num_rows > 0) {
-        $thong_tin_vip = $res_my_vip->fetch_assoc();
-    }
-}
 
 // 3. Lấy LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY từ bảng SQL bang_dat_lich
 $lich_su_gan_day_sql = [];
@@ -291,9 +270,6 @@ function cheSDTKhach($sdt) {
 <body class="d-flex flex-column min-vh-100 bg-light">
 
     <!-- THANH MENU ĐIỀU HƯỚNG ĐỒNG BỘ TẤT CẢ CÁC TRANG -->
-    <!-- ========================================================================= -->
-    <!-- CSS THANH MENU & FOOTER CHUYÊN NGHIỆP ĐA THIẾT BỊ (PC 16:9 & MOBILE 9:16) -->
-    <!-- ========================================================================= -->
     <style>
     :root {
         --cmtc-gold: #e6b96f;
@@ -302,7 +278,6 @@ function cheSDTKhach($sdt) {
         --cmtc-dark-2: #181c22;
     }
 
-    /* --- 1. NAVBAR MÁY TÍNH & ĐIỆN THOẠI (GLASSMORPHISM) --- */
     .cmtc-navbar {
         background: rgba(15, 18, 22, 0.94) !important;
         backdrop-filter: blur(14px);
@@ -360,7 +335,6 @@ function cheSDTKhach($sdt) {
         letter-spacing: 0.5px;
     }
 
-    /* Link Menu trên Desktop */
     .cmtc-nav-link {
         color: rgba(255, 255, 255, 0.85) !important;
         font-weight: 600;
@@ -406,7 +380,6 @@ function cheSDTKhach($sdt) {
         border-radius: 2px;
     }
 
-    /* Nút Đặt Lịch Nổi Bật Trên Menu */
     .btn-nav-booking {
         background: linear-gradient(135deg, #e6b96f 0%, #c09e6c 100%);
         color: #111 !important;
@@ -430,7 +403,6 @@ function cheSDTKhach($sdt) {
         color: #000 !important;
     }
 
-    /* Nút Tài Khoản Khách Hàng */
     .btn-nav-user {
         background: rgba(255, 255, 255, 0.06);
         color: var(--cmtc-gold) !important;
@@ -451,7 +423,6 @@ function cheSDTKhach($sdt) {
         color: #111 !important;
     }
 
-    /* Nút Hamburger trên Điện Thoại */
     .cmtc-toggler {
         border: 1.5px solid rgba(230, 185, 111, 0.6) !important;
         border-radius: 10px;
@@ -464,7 +435,6 @@ function cheSDTKhach($sdt) {
         box-shadow: 0 0 0 3px rgba(230, 185, 111, 0.25) !important;
     }
 
-    /* --- 2. MENU TRƯỢT OFFCANVAS TRÊN ĐIỆN THOẠI --- */
     .cmtc-offcanvas {
         background: linear-gradient(180deg, #0f1216 0%, #181c22 100%) !important;
         color: #fff;
@@ -494,7 +464,6 @@ function cheSDTKhach($sdt) {
         color: var(--cmtc-gold);
     }
 
-    /* --- 3. THANH NAVIGATION ĐÁY MÀN HÌNH DÀNH RIÊNG CHO ĐIỆN THOẠI (< 992px) --- */
     .cmtc-mobile-bottom-bar {
         position: fixed;
         bottom: 0;
@@ -553,7 +522,6 @@ function cheSDTKhach($sdt) {
     @media (max-width: 991.98px) {
         body {
             padding-bottom: 66px;
-            /* Tránh thanh bottom bar che nội dung dưới cùng trên điện thoại */
         }
     }
     </style>
@@ -561,7 +529,6 @@ function cheSDTKhach($sdt) {
     <!-- THANH NAVBAR CHÍNH -->
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top cmtc-navbar">
         <div class="container">
-            <!-- Logo & Tên Thương Hiệu -->
             <a class="cmtc-brand-wrap" href="../TrangChu/index.php">
                 <div class="cmtc-brand-logo-circle">
                     <img src="../images/logo.png"
@@ -573,7 +540,6 @@ function cheSDTKhach($sdt) {
                 </div>
             </a>
 
-            <!-- Nút Mở Menu Trên Điện Thoại (Mở Offcanvas mượt mà) -->
             <div class="d-flex align-items-center gap-2 d-lg-none">
                 <?php if (isset($_SESSION['user_id'])): ?>
                 <a class="btn-nav-user py-1 px-2" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">
@@ -588,7 +554,6 @@ function cheSDTKhach($sdt) {
                 </button>
             </div>
 
-            <!-- Menu Trên Máy Tính (Desktop >= 992px) -->
             <div class="collapse navbar-collapse d-none d-lg-flex" id="menuChinh">
                 <ul class="navbar-nav mx-auto mb-2 mb-lg-0 gap-1">
                     <li class="nav-item">
@@ -618,7 +583,6 @@ function cheSDTKhach($sdt) {
                     </li>
                 </ul>
 
-                <!-- Cụm Nút Phải Trên Desktop -->
                 <div class="d-flex align-items-center gap-2">
                     <a href="../DatLich/DatLich.php" class="btn-nav-booking">
                         <i class="bi bi-calendar-plus-fill"></i>Đặt Lịch Ngay
@@ -806,23 +770,22 @@ function cheSDTKhach($sdt) {
     <section class="py-5 flex-grow-1">
         <div class="container">
 
-            <!-- LOGO HÌNH TRÒN CỦA SALON Ở TRÊN TIÊU ĐỀ ĐẶT LỊCH HẸN (BẠN TỰ CHÈN ẢNH TẠI THUỘC TÍNH src DƯỚI ĐÂY) -->
+            <!-- LOGO HÌNH TRÒN CỦA SALON Ở TRÊN TIÊU ĐỀ ĐẶT LỊCH HẸN -->
             <div class="text-center mb-4">
                 <div class="salon-circle-logo-wrapper">
-                    <!-- THAY ĐƯỜNG DẪN ẢNH LOGO CỦA BẠN VÀO src="..." BÊN DƯỚI -->
                     <img src="../images/logo.png"
                         onerror="this.src='../images/Gemini_Generated_Image_1wira21wira21wir.png'" alt="Logo CMTC Salon"
                         class="salon-circle-logo">
                 </div>
                 <h2 class="fw-bold fs-1 text-uppercase mb-2">ĐẶT LỊCH HẸN CMTC SALON</h2>
-                <p class="text-muted fs-6">Chọn kết hợp nhiều dịch vụ yêu thích, tự động sắp xếp giờ hẹn cách ca 30
-                    phút, vui lòng đăng ký tài khoản Gmail và SĐT chính chủ.</p>
+                <p class="text-muted fs-6">Chọn kết hợp nhiều dịch vụ yêu thích, kiểm tra chống trùng lịch hẹn trong
+                    vòng 30 phút, vui lòng đăng ký tài khoản Gmail và SĐT chính chủ.</p>
             </div>
 
             <div class="row justify-content-center">
                 <div class="col-lg-10 col-xl-9">
 
-                    <!-- BẮT BUỘC ĐĂNG NHẬP TRƯỚC KHI ĐẶT LỊCH -->
+                    <!-- BẮT BUỘC ĐĂNG NHẬP TRƯỚC KHI ĐẶT LỊCH (ĐÃ ẨN HOÀN TOÀN THẺ VIP) -->
                     <?php if (!$da_dang_nhap): ?>
                     <div
                         class="alert alert-danger d-flex flex-column flex-md-row justify-content-between align-items-md-center shadow-sm rounded-3 mb-4 p-3 border-danger">
@@ -837,7 +800,7 @@ function cheSDTKhach($sdt) {
                     </div>
                     <?php else: ?>
                     <div
-                        class="alert alert-success d-flex flex-wrap justify-content-between align-items-center shadow-sm rounded-3 mb-3 py-2 px-3 gap-2">
+                        class="alert alert-success d-flex flex-wrap justify-content-between align-items-center shadow-sm rounded-3 mb-4 py-2 px-3 gap-2">
                         <span class="small">
                             <i class="bi bi-person-check-fill me-1"></i>Khách hàng:
                             <strong><?= htmlspecialchars($_SESSION['ho_ten']) ?></strong> • SĐT & Gmail đã được xác thực
@@ -851,29 +814,13 @@ function cheSDTKhach($sdt) {
                                 data-bs-target="#modalThongTinCaNhan">Đổi tên</button>
                         </div>
                     </div>
-                    <?php if ($thong_tin_vip): ?>
-                    <div class="p-3 mb-4 rounded-3 shadow-sm d-flex align-items-center justify-content-between"
-                        style="background: linear-gradient(135deg, #111 0%, #2b3035 100%); color: #fff; border: 2px solid #e6b96f;">
-                        <div>
-                            <span
-                                class="badge bg-warning text-dark fw-bold mb-1"><?= htmlspecialchars($thong_tin_vip['hang_vip']) ?>
-                                (Top 5 VIP)</span>
-                            <div class="small text-light">
-                                <strong>Đặc quyền VIP của bạn:</strong> <span
-                                    class="text-warning"><?= htmlspecialchars($thong_tin_vip['uu_dai_dac_quyen']) ?></span>
-                            </div>
-                        </div>
-                        <span
-                            class="badge bg-danger fs-6 px-3 py-2">-<?= (int)$thong_tin_vip['phan_tram_giam'] ?>%</span>
-                    </div>
-                    <?php endif; ?>
                     <?php endif; ?>
 
                     <div class="card shadow-lg border-0 rounded-4 mb-5">
                         <div class="card-body p-4 p-md-5">
                             <form id="formDatLich" action="xu_ly_dat_lich.php" method="POST"
                                 onsubmit="return kiemTraTruocKhiGui()">
-                                <!-- Hàng 1: Chọn Tỉnh/Thành Phố (Đã bỏ ô Quận/Huyện không cần thiết để tránh lệch địa chỉ cơ sở) -->
+                                <!-- Hàng 1: Chọn Tỉnh/Thành Phố -->
                                 <div class="mb-4">
                                     <label class="form-label form-label-custom"><i class="bi bi-geo-alt me-2"></i>CHỌN
                                         TỈNH/THÀNH PHỐ</label>
@@ -881,11 +828,10 @@ function cheSDTKhach($sdt) {
                                         class="form-select form-select-lg text-dark fw-semibold custom-input" required>
                                         <option selected disabled value="">Đang tải dữ liệu...</option>
                                     </select>
-                                    <!-- Trường ẩn lưu khu vực đúng theo cơ sở Salon khách chọn -->
                                     <input type="hidden" name="quan_huyen" id="quanHuyenHidden" value="">
                                 </div>
 
-                                <!-- Hàng 2: Chọn Cơ Sở Salon -->
+                                <!-- Hàng 2: Chọn Cơ Sở Salon (Đã ẩn tên thợ cắt tóc trên thẻ Salon) -->
                                 <div class="mb-4">
                                     <label class="form-label form-label-custom"><i class="bi bi-shop me-2"></i>CHỌN CƠ
                                         SỞ
@@ -904,9 +850,9 @@ function cheSDTKhach($sdt) {
                                     </div>
                                 </div>
 
-                                <!-- Hàng 3: CHỌN NHIỀU DỊCH VỤ & KỸ THUẬT VIÊN -->
+                                <!-- Hàng 3: CHỌN NHIỀU DỊCH VỤ & KỸ THUẬT VIÊN (Ẩn Kỹ thuật viên cho đến khi khách chọn Cơ sở Salon) -->
                                 <div class="row g-4 mb-3">
-                                    <div class="col-md-6">
+                                    <div class="col-md-6" id="cotChonDichVu">
                                         <div class="d-flex justify-content-between align-items-center mb-1">
                                             <label class="form-label form-label-custom mb-0"><i
                                                     class="bi bi-layers me-2"></i>CHỌN DỊCH VỤ (CÓ THỂ CHỌN
@@ -915,7 +861,6 @@ function cheSDTKhach($sdt) {
                                                 style="font-size: 12px;">0 VNĐ</span>
                                         </div>
 
-                                        <!-- Nút mở danh sách tích chọn nhiều dịch vụ -->
                                         <button type="button" class="multi-service-dropdown-btn"
                                             data-bs-toggle="collapse" data-bs-target="#khungChonNhieuDichVu"
                                             aria-expanded="false">
@@ -924,7 +869,6 @@ function cheSDTKhach($sdt) {
                                             <i class="bi bi-chevron-down text-secondary"></i>
                                         </button>
 
-                                        <!-- Danh sách Checkbox các dịch vụ từ SQL -->
                                         <div class="collapse mt-2 show" id="khungChonNhieuDichVu">
                                             <div class="service-checklist-box">
                                                 <?php if (count($danh_sach_dich_vu) > 0): ?>
@@ -953,7 +897,8 @@ function cheSDTKhach($sdt) {
                                         <div id="khungTheDichVuDaChon" class="mt-2"></div>
                                     </div>
 
-                                    <div class="col-md-6">
+                                    <!-- KHUNG CHỌN THỢ CẮT TÓC: MẶC ĐỊNH ẨN (d-none), CHỈ HIỆN KHI KHÁCH CHỌN 1 TRONG 2 SALON -->
+                                    <div class="col-md-6 d-none" id="khungChonKyThuatVien">
                                         <label class="form-label form-label-custom mb-1"><i
                                                 class="bi bi-scissors me-2"></i>KỸ THUẬT VIÊN</label>
                                         <select name="ky_thuat_vien" id="kyThuatVien"
@@ -963,15 +908,17 @@ function cheSDTKhach($sdt) {
                                         </select>
 
                                         <div class="p-3 bg-light rounded-3 border mt-3 small text-muted">
-                                            <i class="bi bi-shield-check text-success me-1"></i><strong>Tự động xếp lịch
-                                                thông minh:</strong><br>
-                                            Hệ thống tự động kiểm tra lịch bận của thợ và tự động xếp lùi <strong>+30
-                                                phút</strong> nếu trùng giờ với khách đặt trước.
+                                            <i class="bi bi-shield-lock text-danger me-1"></i><strong>Kiểm soát trùng
+                                                lịch hẹn:</strong><br>
+                                            Mỗi ca cắt kéo dài <strong>30 phút</strong>. Nếu khung giờ bạn chọn trùng
+                                            với
+                                            khách đã đặt trước hoặc giờ bận của thợ, hệ thống sẽ không cho phép đặt vào
+                                            giờ đó.
                                         </div>
                                     </div>
                                 </div>
 
-                                <!-- Khung hiển thị lịch bận của thợ & thông báo tự động cố định lùi 30p -->
+                                <!-- Khung hiển thị cảnh báo chặn trùng lịch hoặc lịch bận của thợ -->
                                 <div id="khungCanhBaoLichBan" class="alert alert-danger d-none small mb-4"></div>
 
                                 <!-- Hàng 4: Ngày giờ, Họ tên, SĐT & Gmail -->
@@ -980,10 +927,11 @@ function cheSDTKhach($sdt) {
                                         <div class="d-flex justify-content-between align-items-center">
                                             <label class="form-label form-label-custom mb-1"><i
                                                     class="bi bi-calendar3 me-2"></i>CHỌN NGÀY GIỜ HẸN</label>
-                                            <span class="badge bg-warning text-dark mb-1" style="font-size: 11px;">Cách
-                                                ca +30p</span>
+                                            <span class="badge bg-warning text-dark mb-1" style="font-size: 11px;">Mỗi
+                                                ca 30p</span>
                                         </div>
                                         <input type="datetime-local" name="ngay_gio" id="ngayGioInput"
+                                            min="<?= date('Y-m-d\TH:i') ?>"
                                             class="form-control form-control-lg fw-bold text-dark custom-input"
                                             required>
                                         <small id="goiYKhungGioTiepTheo"
@@ -1034,7 +982,7 @@ function cheSDTKhach($sdt) {
                         </div>
                     </div>
 
-                    <!-- BẢNG LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY LẤY TỪ SQL (CÓ THÊM CỘT THỜI GIAN ĐẶT) -->
+                    <!-- BẢNG LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY LẤY TỪ SQL -->
                     <div id="bangLichSuGanDaySQL" class="history-sql-card p-4 p-md-5">
                         <div
                             class="d-flex flex-column flex-md-row justify-content-between align-items-md-center border-bottom pb-3 mb-3 gap-3">
@@ -1122,7 +1070,7 @@ function cheSDTKhach($sdt) {
                                                             class="btn btn-outline-success btn-sm py-0 px-2 fw-bold"
                                                             style="font-size: 11px;"
                                                             onclick="chonNhanhGioLui30p('<?= htmlspecialchars($row_s['ky_thuat_vien']) ?>', '<?= $row_s['iso_tiep_theo'] ?>')">
-                                                            <i class="bi bi-plus-circle me-1"></i>Đặt nối tiếp (+30p)
+                                                            <i class="bi bi-plus-circle me-1"></i>Chọn giờ trống này
                                                         </button>
                                                     </div>
                                                 </td>
@@ -1206,9 +1154,6 @@ function cheSDTKhach($sdt) {
     <?php $conn_dv->close(); ?>
 
     <!-- FOOTER CHÂN TRANG -->
-    <!-- ========================================================================= -->
-    <!-- FOOTER CHÂN TRANG CHUYÊN NGHIỆP ĐA THIẾT BỊ (PC 4 CỘT & MOBILE TỐI ƯU)    -->
-    <!-- ========================================================================= -->
     <style>
     .cmtc-footer {
         background: linear-gradient(180deg, #14181d 0%, #0b0d10 100%);
@@ -1296,7 +1241,6 @@ function cheSDTKhach($sdt) {
     <footer class="cmtc-footer pt-5 pb-4 mt-auto">
         <div class="container">
             <div class="row g-4 text-center text-md-start">
-                <!-- CỘT 1: THƯƠNG HIỆU CMTC SALON -->
                 <div class="col-lg-3 col-md-6">
                     <div class="d-flex align-items-center justify-content-center justify-content-md-start gap-2 mb-3">
                         <div class="cmtc-brand-logo-circle" style="width: 48px; height: 48px;">
@@ -1318,7 +1262,6 @@ function cheSDTKhach($sdt) {
                     </a>
                 </div>
 
-                <!-- CỘT 2: HỆ THỐNG CHI NHÁNH & LIÊN HỆ -->
                 <div class="col-lg-4 col-md-6">
                     <h6 class="cmtc-footer-title">Hệ Thống Chi Nhánh</h6>
                     <div class="cmtc-branch-box text-start">
@@ -1341,7 +1284,6 @@ function cheSDTKhach($sdt) {
                     </div>
                 </div>
 
-                <!-- CỘT 3: LIÊN KẾT NHANH & DỊCH VỤ -->
                 <div class="col-lg-2 col-md-6">
                     <h6 class="cmtc-footer-title">Menu Nhanh</h6>
                     <ul class="list-unstyled mb-0 d-flex flex-column align-items-center align-items-md-start">
@@ -1358,7 +1300,6 @@ function cheSDTKhach($sdt) {
                     </ul>
                 </div>
 
-                <!-- CỘT 4: GIỜ MỞ CỬA & KẾT NỐI MẠNG XÃ HỘI -->
                 <div class="col-lg-3 col-md-6">
                     <h6 class="cmtc-footer-title">Giờ Làm Việc</h6>
                     <div class="cmtc-branch-box text-start small mb-3">
@@ -1390,7 +1331,6 @@ function cheSDTKhach($sdt) {
                 </div>
             </div>
 
-            <!-- Dòng Bản Quyền Dưới Cùng -->
             <div class="row mt-4 pt-3 border-top border-secondary border-opacity-25 align-items-center">
                 <div class="col-md-8 text-center text-md-start small text-white-50">
                     © 2026 <strong class="text-warning">CMTC Salon</strong>. Hệ thống Đặt Lịch & Quản Lý Salon Tóc
@@ -1406,12 +1346,12 @@ function cheSDTKhach($sdt) {
         </div>
     </footer>
 
-    <!-- SCRIPT XỬ LÝ CHỌN NHIỀU DỊCH VỤ, TÍNH TỔNG TIỀN & CỐ ĐỊNH LÙI 30 PHÚT -->
-    <!-- SCRIPT XỬ LÝ CHỌN NHIỀU DỊCH VỤ, KHÓA NGÀY GIỜ QUÁ KHỨ & CHIA 2 SALON (MỖI SALON 2 THỢ CẮT) -->
+    <!-- SCRIPT XỬ LÝ CHẶN TRÙNG LỊCH NGAY LẬP TỨC, ẨN THỢ TRƯỚC KHI CHỌN SALON & KHÓA NGÀY QUÁ KHỨ -->
     <script>
     const tinhThanhSelect = document.getElementById('tinhThanh');
     const quanHuyenHidden = document.getElementById('quanHuyenHidden');
     const salonContainer = document.getElementById('salonContainer');
+    const khungChonKyThuatVien = document.getElementById('khungChonKyThuatVien');
     const kyThuatVienSelect = document.getElementById('kyThuatVien');
     const ngayGioInput = document.getElementById('ngayGioInput');
     const khungCanhBao = document.getElementById('khungCanhBaoLichBan');
@@ -1421,8 +1361,9 @@ function cheSDTKhach($sdt) {
     const danhSachLichBan = <?= json_encode($lich_ban_arr, JSON_UNESCAPED_UNICODE) ?>;
     const danhSachLichDaDat = <?= json_encode($lich_da_dat_arr, JSON_UNESCAPED_UNICODE) ?>;
     let provincesData = [];
+    let dangBiTrungLich = false;
 
-    // Phân chia cố định: 2 Cơ sở Salon, mỗi Salon có đúng 2 Nhân viên cắt
+    // Phân chia cố định: 2 Cơ sở Salon, mỗi Salon có đúng 2 Nhân viên cắt (Chỉ hiện khi khách chọn Salon)
     const DANH_SACH_THO_THEO_SALON = {
         "TP. Vinh": [{
                 value: "Vừ Xuân Công",
@@ -1444,7 +1385,7 @@ function cheSDTKhach($sdt) {
         ]
     };
 
-    // 1. VÔ HIỆU HÓA CÁC NGÀY GIỜ TRƯỚC THỜI ĐIỂM HIỆN TẠI
+    // 1. VÔ HIỆU HÓA TOÀN BỘ NGÀY GIỜ TRƯỚC THỜI ĐIỂM HIỆN TẠI
     function layChuoiNgayGioHienTaiISO() {
         const now = new Date();
         const nam = now.getFullYear();
@@ -1458,10 +1399,9 @@ function cheSDTKhach($sdt) {
     function capNhatMinNgayGioHienTai() {
         if (!ngayGioInput) return;
         const minISO = layChuoiNgayGioHienTaiISO();
-        ngayGioInput.min = minISO;
+        ngayGioInput.setAttribute('min', minISO);
     }
 
-    // Khởi chạy khóa ngày giờ quá khứ ngay khi tải trang và cập nhật mỗi 30 giây
     capNhatMinNgayGioHienTai();
     setInterval(capNhatMinNgayGioHienTai, 30000);
 
@@ -1469,7 +1409,6 @@ function cheSDTKhach($sdt) {
         if (!isoString) return false;
         const thoiGianChon = new Date(isoString);
         const hienTai = new Date();
-        // Cho phép sai số 1 phút trong lúc thao tác chọn trên form
         hienTai.setSeconds(0, 0);
         return thoiGianChon.getTime() < (hienTai.getTime() - 60000);
     }
@@ -1516,13 +1455,22 @@ function cheSDTKhach($sdt) {
         }
 
         if (!kyThuatVienSelect.value) {
-            alert('⚠️ Quý khách vui lòng chọn Nhân viên cắt tóc tại Salon!');
+            alert('⚠️ Quý khách vui lòng chọn Nhân viên cắt tóc của cơ sở!');
             return false;
         }
 
         if (!ngayGioInput.value || laThoiGianTrongQuaKhu(ngayGioInput.value)) {
             alert('❌ Không thể đặt lịch vào ngày giờ đã qua! Vui lòng chọn ngày giờ từ thời điểm hiện tại trở đi.');
             capNhatMinNgayGioHienTai();
+            ngayGioInput.focus();
+            return false;
+        }
+
+        // Kiểm tra lại lần cuối xem có bị trùng lịch hay không
+        kiemTraTrungLichKhongChoDat();
+        if (dangBiTrungLich) {
+            alert(
+                '❌ Khung giờ bạn chọn đã có khách đặt trước hoặc trùng lịch bận của thợ! Vui lòng chọn khung giờ khác.');
             ngayGioInput.focus();
             return false;
         }
@@ -1543,17 +1491,24 @@ function cheSDTKhach($sdt) {
     tinhThanhSelect.addEventListener('change', function() {
         const provinceName = this.value;
 
+        // Ẩn lại khung chọn thợ khi khách đổi Tỉnh/Thành phố cho đến khi bấm chọn 1 Salon cụ thể
+        if (khungChonKyThuatVien) {
+            khungChonKyThuatVien.classList.add('d-none');
+        }
+        kyThuatVienSelect.disabled = true;
+        kyThuatVienSelect.innerHTML =
+            '<option selected disabled value="">Vui lòng chọn Cơ sở Salon trước</option>';
+        khungCanhBao.classList.add('d-none');
+
         if (provinceName.includes('Nghệ An')) {
+            // Đã ẩn tên thợ cắt tóc trên 2 thẻ Salon, chỉ hiện địa chỉ cơ sở
             salonContainer.innerHTML = `
                     <div class="col-md-6">
                         <label class="salon-card">
                             <input type="radio" name="salon_id" value="CMTC Salon - Cơ sở Vinh (Số 51 Lý Tự Trọng, TP. Vinh)" data-khu-vuc="TP. Vinh" required onchange="enableKTV(this)">
                             <div class="salon-info">
                                 <h6>CMTC Salon - Cơ sở 1 (TP. Vinh)</h6>
-                                <p class="mb-1"><i class="bi bi-geo-alt-fill text-danger"></i> Số 51 Lý Tự Trọng, Phường Vinh Phú, TP. Vinh, Nghệ An</p>
-                                <span class="badge bg-dark text-warning border border-warning" style="font-size: 11px;">
-                                    <i class="bi bi-scissors me-1"></i>2 Thợ: Vừ Xuân Công • Moong Văn Minh
-                                </span>
+                                <p class="mb-0"><i class="bi bi-geo-alt-fill text-danger"></i> Số 51 Lý Tự Trọng, Phường Vinh Phú, TP. Vinh, Nghệ An</p>
                             </div>
                         </label>
                     </div>
@@ -1562,17 +1517,11 @@ function cheSDTKhach($sdt) {
                             <input type="radio" name="salon_id" value="CMTC Salon - Cơ sở Kỳ Sơn (Mường Lống, Kỳ Sơn)" data-khu-vuc="Huyện Kỳ Sơn" required onchange="enableKTV(this)">
                             <div class="salon-info">
                                 <h6>CMTC Salon - Cơ sở 2 (Kỳ Sơn)</h6>
-                                <p class="mb-1"><i class="bi bi-geo-alt-fill text-danger"></i> Mường Lống, Huyện Kỳ Sơn, Nghệ An</p>
-                                <span class="badge bg-dark text-warning border border-warning" style="font-size: 11px;">
-                                    <i class="bi bi-scissors me-1"></i>2 Thợ: Lầu Bá Trừ • Hờ Bá Chính
-                                </span>
+                                <p class="mb-0"><i class="bi bi-geo-alt-fill text-danger"></i> Mường Lống, Huyện Kỳ Sơn, Nghệ An</p>
                             </div>
                         </label>
                     </div>
                 `;
-            kyThuatVienSelect.disabled = true;
-            kyThuatVienSelect.innerHTML =
-                '<option selected disabled value="">Vui lòng tích chọn 1 trong 2 Cơ sở Salon ở trên</option>';
         } else {
             salonContainer.innerHTML = `
                     <div class="col-12">
@@ -1581,13 +1530,10 @@ function cheSDTKhach($sdt) {
                         </div>
                     </div>
                 `;
-            kyThuatVienSelect.disabled = true;
-            kyThuatVienSelect.innerHTML =
-                '<option selected disabled value="">Vui lòng chọn Cơ sở Salon trước</option>';
         }
     });
 
-    // 2. HIỂN THỊ ĐÚNG 2 NHÂN VIÊN CẮT TÓC TƯƠNG ỨNG VỚI SALON ĐÃ CHỌN
+    // 2. CHỈ HIỆN KHUNG KỸ THUẬT VIÊN & 2 THỢ TƯƠNG ỨNG KHI KHÁCH BẤM CHỌN 1 TRONG 2 SALON
     function enableKTV(radioEl) {
         let khuVuc = 'TP. Vinh';
         if (radioEl && quanHuyenHidden) {
@@ -1597,18 +1543,24 @@ function cheSDTKhach($sdt) {
             khuVuc = quanHuyenHidden.value;
         }
 
+        if (khungChonKyThuatVien) {
+            khungChonKyThuatVien.classList.remove('d-none');
+        }
+
         const dsThoCuaCoSo = DANH_SACH_THO_THEO_SALON[khuVuc] || DANH_SACH_THO_THEO_SALON["TP. Vinh"];
         kyThuatVienSelect.disabled = false;
         kyThuatVienSelect.classList.remove('text-muted');
         kyThuatVienSelect.classList.add('text-dark', 'fw-semibold');
 
-        let optionsHtml =
-        `<option selected disabled value="">-- Chọn 1 trong 2 nhân viên cắt tại ${khuVuc} --</option>`;
+        let optionsHtml = `<option selected disabled value="">-- Chọn nhân viên cắt tóc tại ${khuVuc} --</option>`;
         dsThoCuaCoSo.forEach(tho => {
             optionsHtml += `<option value="${tho.value}">${tho.label}</option>`;
         });
         kyThuatVienSelect.innerHTML = optionsHtml;
         khungCanhBao.classList.add("d-none");
+        goiYKhungGioTiepTheo.innerHTML = "";
+        dangBiTrungLich = false;
+        if (btnSubmit) btnSubmit.disabled = false;
     }
 
     function doiGioSangPhut(strGio) {
@@ -1623,17 +1575,14 @@ function cheSDTKhach($sdt) {
     }
 
     function chonNhanhGioLui30p(tenTho, isoTimeTiepTheo) {
-        // Kiểm tra nếu giờ nối tiếp đó đã nằm trong quá khứ thì tự động lấy giờ hiện tại
         const minHienTai = layChuoiNgayGioHienTaiISO();
         const thoiGianGan = laThoiGianTrongQuaKhu(isoTimeTiepTheo) ? minHienTai : isoTimeTiepTheo;
 
-        // Tự động xác định cơ sở của thợ được chọn
         let khuVucTho = "TP. Vinh";
         if (DANH_SACH_THO_THEO_SALON["Huyện Kỳ Sơn"].some(t => t.value === tenTho)) {
             khuVucTho = "Huyện Kỳ Sơn";
         }
 
-        // Nếu chưa chọn tỉnh Nghệ An, tự động gán Nghệ An và tích chọn đúng cơ sở của thợ đó
         if (!tinhThanhSelect.value || !tinhThanhSelect.value.includes('Nghệ An')) {
             const optNgheAn = Array.from(tinhThanhSelect.options).find(o => o.value.includes('Nghệ An'));
             if (optNgheAn) {
@@ -1650,49 +1599,39 @@ function cheSDTKhach($sdt) {
 
         kyThuatVienSelect.value = tenTho;
         ngayGioInput.value = thoiGianGan;
-        kiemTraVaCoDinhLui30Phut(false);
+        kiemTraTrungLichKhongChoDat();
         ngayGioInput.scrollIntoView({
             behavior: 'smooth',
             block: 'center'
         });
     }
 
-    function kiemTraVaCoDinhLui30Phut(tuDongDienKhiChonTho = false) {
+    // 3. KIỂM TRA TRÙNG LỊCH: NẾU TRÙNG GIỜ (< 30 PHÚT) THÌ CHẶN LUÔN KHÔNG CHO ĐẶT GIỜ ĐÓ
+    function kiemTraTrungLichKhongChoDat() {
         capNhatMinNgayGioHienTai();
         const ktv = kyThuatVienSelect.value;
         let dtVal = ngayGioInput.value;
+        dangBiTrungLich = false;
 
-        // Kiểm tra chặn ngay lập tức nếu khách chọn ngày giờ trước thời điểm hiện tại
+        // Chặn ngay nếu chọn ngày giờ trước thời điểm hiện tại
         if (dtVal && laThoiGianTrongQuaKhu(dtVal)) {
             const minHienTai = layChuoiNgayGioHienTaiISO();
             khungCanhBao.className = "alert alert-danger fw-bold small mb-4";
             khungCanhBao.innerHTML =
-                `❌ KHÔNG THỂ ĐẶT LỊCH QUÁ KHỨ: Ngày giờ bạn vừa chọn đã qua! Vui lòng chọn thời gian từ <strong>${minHienTai.replace('T', ' ')}</strong> trở đi.`;
+                `❌ KHÔNG THỂ ĐẶT LỊCH QUÁ KHỨ: Ngày giờ bạn chọn đã qua! Vui lòng chọn từ thời điểm hiện tại (<strong>${minHienTai.replace('T', ' ')}</strong>) trở đi.`;
             khungCanhBao.classList.remove("d-none");
             goiYKhungGioTiepTheo.innerHTML =
-                `<span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Ngày giờ không hợp lệ (đã qua thời điểm hiện tại)</span>`;
-            ngayGioInput.value = minHienTai;
-            dtVal = minHienTai;
+                `<span class="text-danger"><i class="bi bi-x-circle-fill me-1"></i>Không thể chọn ngày giờ trong quá khứ</span>`;
+            ngayGioInput.value = "";
+            dangBiTrungLich = true;
+            if (btnSubmit) btnSubmit.disabled = true;
+            return;
         }
 
         if (!ktv) return;
 
-        if (!dtVal && tuDongDienKhiChonTho && ktv !== 'Chọn thợ bất kỳ') {
-            const cacDonCuaTho = danhSachLichDaDat.filter(item => item.ky_thuat_vien === ktv);
-            if (cacDonCuaTho.length > 0) {
-                const donCuoi = cacDonCuaTho[cacDonCuaTho.length - 1];
-                if (!laThoiGianTrongQuaKhu(donCuoi.ngay_gio_lui_30p)) {
-                    ngayGioInput.value = donCuoi.ngay_gio_lui_30p;
-                    dtVal = ngayGioInput.value;
-                    goiYKhungGioTiepTheo.innerHTML =
-                        `<i class="bi bi-pin-angle-fill me-1"></i>Đã tự động xếp nối tiếp +30p sau khách <strong>${donCuoi.ho_ten}</strong> (đặt lúc ${donCuoi.gio_hen} ngày ${donCuoi.ngay_hen})!`;
-                }
-            }
-        }
-
         const lichBanCuaTho = danhSachLichBan.filter(item => item.ky_thuat_vien === ktv);
-        const lichKhachTruocCuaTho = danhSachLichDaDat.filter(item => item.ky_thuat_vien === ktv && ktv !==
-            'Chọn thợ bất kỳ');
+        const lichKhachTruocCuaTho = danhSachLichDaDat.filter(item => item.ky_thuat_vien === ktv);
 
         if (!dtVal) {
             let htmlThongBao = [];
@@ -1704,57 +1643,49 @@ function cheSDTKhach($sdt) {
             }
             if (lichKhachTruocCuaTho.length > 0) {
                 let textDat = lichKhachTruocCuaTho.slice(-4).map(d =>
-                    `Ngày ${d.ngay_hen} khách đặt lúc <strong>${d.gio_hen}</strong> &rarr; Giờ đặt kế tiếp (+30p): <strong>${d.gio_lui_30p}</strong>`
+                    `Ngày ${d.ngay_hen} đã có khách đặt lúc <strong>${d.gio_hen}</strong> (Khung giờ trống tiếp theo từ: <strong>${d.gio_lui_30p}</strong>)`
                 ).join('<br>• ');
-                htmlThongBao.push(`<strong>Khách trước đã đặt:</strong><br>• ${textDat}`);
+                htmlThongBao.push(`<strong>Các ca đã có khách đặt:</strong><br>• ${textDat}`);
             }
             if (htmlThongBao.length > 0) {
                 khungCanhBao.className = "alert alert-warning small mb-4";
                 khungCanhBao.innerHTML =
-                    `<i class="bi bi-clock-history me-1"></i><strong>Lịch của thợ ${ktv}:</strong><br>` + htmlThongBao
-                    .join('<br>');
+                    `<i class="bi bi-clock-history me-1"></i><strong>Lịch của nhân viên ${ktv}:</strong><br>` +
+                    htmlThongBao.join('<br>');
                 khungCanhBao.classList.remove("d-none");
             } else {
                 khungCanhBao.classList.add("d-none");
             }
+            if (btnSubmit) btnSubmit.disabled = false;
             return;
         }
 
         let [ngayChon, gioChon] = dtVal.split('T');
         let phutChon = doiGioSangPhut(gioChon);
 
-        if (ktv !== 'Chọn thợ bất kỳ') {
-            const cacDonTrongNgay = danhSachLichDaDat
-                .filter(item => item.ky_thuat_vien === ktv && item.ngay_hen === ngayChon)
-                .sort((a, b) => doiGioSangPhut(a.gio_hen) - doiGioSangPhut(b.gio_hen));
+        // Kiểm tra trùng với đơn đặt lịch của khách khác trong vòng 30 phút -> CHẶN KHÔNG CHO ĐẶT GIỜ NÀY LUÔN
+        const cacDonTrongNgay = danhSachLichDaDat
+            .filter(item => item.ky_thuat_vien === ktv && item.ngay_hen === ngayChon)
+            .sort((a, b) => doiGioSangPhut(a.gio_hen) - doiGioSangPhut(b.gio_hen));
 
-            let daTuDongLui = false;
-            let thongTinKhachTruoc = null;
-
-            for (let i = 0; i < cacDonTrongNgay.length; i++) {
-                const don = cacDonTrongNgay[i];
-                const phutKhachTruoc = doiGioSangPhut(don.gio_hen);
-                if (Math.abs(phutChon - phutKhachTruoc) < 30) {
-                    phutChon = phutKhachTruoc + 30;
-                    daTuDongLui = true;
-                    thongTinKhachTruoc = don;
-                }
-            }
-
-            if (daTuDongLui && thongTinKhachTruoc) {
-                gioChon = doiPhutSangGio(phutChon);
-                ngayGioInput.value = `${ngayChon}T${gioChon}`;
-                khungCanhBao.className = "alert alert-warning border-warning fw-semibold small mb-4";
+        for (let i = 0; i < cacDonTrongNgay.length; i++) {
+            const don = cacDonTrongNgay[i];
+            const phutKhachTruoc = doiGioSangPhut(don.gio_hen);
+            if (Math.abs(phutChon - phutKhachTruoc) < 30) {
+                dangBiTrungLich = true;
+                const gioTrongTiep = doiPhutSangGio(phutKhachTruoc + 30);
+                khungCanhBao.className = "alert alert-danger border-danger fw-semibold small mb-4";
                 khungCanhBao.innerHTML =
-                    `<i class="bi bi-arrow-clockwise fs-6 me-1 text-dark"></i><strong>ĐÃ TỰ ĐỘNG XẾP LÙI 30 PHÚT:</strong> Khách hàng <strong>${thongTinKhachTruoc.ho_ten}</strong> đã đặt thợ <strong>${ktv}</strong> lúc <strong>${thongTinKhachTruoc.gio_hen}</strong>. Hệ thống đã chuyển giờ hẹn của bạn sang <strong>${gioChon}</strong> để không trùng lịch!`;
+                    `<i class="bi bi-x-octagon-fill fs-6 me-1"></i><strong>KHÔNG THỂ ĐẶT GIỜ NÀY (TRÙNG LỊCH HẸN):</strong> Nhân viên <strong>${ktv}</strong> đã có khách đặt lịch lúc <strong>${don.gio_hen} ngày ${ngayChon}</strong> (mỗi ca cắt kéo dài 30 phút). Quý khách vui lòng chọn khung giờ khác (từ <strong>${gioTrongTiep}</strong> trở đi) hoặc chọn nhân viên khác!`;
                 khungCanhBao.classList.remove("d-none");
                 goiYKhungGioTiepTheo.innerHTML =
-                    `<i class="bi bi-check2-circle me-1"></i>Giờ hẹn cố định: <strong>${gioChon} (${ngayChon})</strong>`;
-                if (btnSubmit) btnSubmit.disabled = false;
+                    `<span class="text-danger"><i class="bi bi-lock-fill me-1"></i>Giờ ${gioChon} đã kín lịch! Vui lòng chọn từ <strong>${gioTrongTiep}</strong> trở đi.</span>`;
+                if (btnSubmit) btnSubmit.disabled = true;
                 return;
             }
         }
 
+        // Kiểm tra trùng giờ bận cá nhân của thợ
         const biTrungBan = danhSachLichBan.find(item =>
             item.ky_thuat_vien === ktv &&
             item.ngay_ban === ngayChon &&
@@ -1763,30 +1694,39 @@ function cheSDTKhach($sdt) {
         );
 
         if (biTrungBan) {
+            dangBiTrungLich = true;
             khungCanhBao.className = "alert alert-danger fw-bold small mb-4";
             khungCanhBao.innerHTML =
-                `❌ KHÔNG THỂ ĐẶT GIỜ NÀY: Thợ ${ktv} đang bận từ ${biTrungBan.gio_bat_dau.slice(0,5)} đến ${biTrungBan.gio_ket_thuc.slice(0,5)} ngày ${ngayChon} (${biTrungBan.ly_do}). Vui lòng chọn giờ ngoài khung này!`;
+                `❌ KHÔNG THỂ ĐẶT GIỜ NÀY: Nhân viên ${ktv} đang bận từ ${biTrungBan.gio_bat_dau.slice(0,5)} đến ${biTrungBan.gio_ket_thuc.slice(0,5)} ngày ${ngayChon} (${biTrungBan.ly_do}). Vui lòng chọn giờ ngoài khung này!`;
             khungCanhBao.classList.remove("d-none");
+            goiYKhungGioTiepTheo.innerHTML =
+                `<span class="text-danger"><i class="bi bi-lock-fill me-1"></i>Nhân viên đang bận trong khung giờ này!</span>`;
             if (btnSubmit) btnSubmit.disabled = true;
             return;
         }
 
+        // Nếu không trùng lịch
+        dangBiTrungLich = false;
         khungCanhBao.className = "alert alert-info small mb-4";
         khungCanhBao.innerHTML =
-            `<i class="bi bi-check-circle-fill text-success me-1"></i>Khung giờ <strong>${gioChon} ngày ${ngayChon}</strong> với thợ <strong>${ktv}</strong> hoàn toàn hợp lệ!`;
+            `<i class="bi bi-check-circle-fill text-success me-1"></i>Khung giờ <strong>${gioChon} ngày ${ngayChon}</strong> với nhân viên <strong>${ktv}</strong> đang trống và hoàn toàn hợp lệ!`;
         khungCanhBao.classList.remove("d-none");
         goiYKhungGioTiepTheo.innerHTML =
-            `<i class="bi bi-check2-all me-1"></i>Khung giờ hợp lệ: <strong>${gioChon} (${ngayChon})</strong>`;
+            `<span class="text-success"><i class="bi bi-check2-all me-1"></i>Khung giờ hợp lệ: <strong>${gioChon} (${ngayChon})</strong></span>`;
         if (btnSubmit) btnSubmit.disabled = false;
     }
 
     kyThuatVienSelect.addEventListener('change', function() {
-        kiemTraVaCoDinhLui30Phut(true);
+        kiemTraTrungLichKhongChoDat();
     });
     ngayGioInput.addEventListener('change', function() {
-        kiemTraVaCoDinhLui30Phut(false);
+        kiemTraTrungLichKhongChoDat();
+    });
+    ngayGioInput.addEventListener('input', function() {
+        kiemTraTrungLichKhongChoDat();
     });
     </script>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 

@@ -478,21 +478,19 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                                     placeholder="VD: Nguyễn Văn A" required />
                             </div>
                             <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted small">Địa chỉ Gmail chính chủ (Nhận mã
-                                    OTP 6 số)</label>
+                                <label class="form-label fw-semibold text-muted small">Địa chỉ Gmail chính chủ </label>
                                 <input type="email" name="email" id="regEmail" class="form-control"
                                     value="<?= htmlspecialchars($_POST['email'] ?? '') ?>"
                                     placeholder="VD: khachhang@gmail.com" required />
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted small">Số điện thoại chính chủ (10
-                                    số)</label>
+                                <label class="form-label fw-semibold text-muted small">Số điện thoại chính chủ </label>
                                 <div class="input-group">
                                     <input type="tel" name="so_dien_thoai" id="regSoDienThoai"
                                         class="form-control fw-bold"
                                         value="<?= htmlspecialchars($_POST['so_dien_thoai'] ?? '') ?>"
-                                        placeholder="VD: 0398796035" maxlength="10"
+                                        placeholder="VD: 0123456789" maxlength="10"
                                         oninput="this.value = this.value.replace(/[^0-9]/g, '');" required />
                                     <button type="button" id="btnGuiMaOTP" class="btn btn-warning fw-bold px-3"
                                         onclick="guiMaOTPVeGmail()">
@@ -504,8 +502,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                             <div class="mb-3 p-3 rounded-3 border bg-light">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <label class="form-label fw-bold text-dark small mb-0"><i
-                                            class="bi bi-shield-lock-fill text-success me-1"></i>NHẬP MÃ OTP 6 SỐ TỪ
-                                        GMAIL</label>
+                                            class="bi bi-shield-lock-fill text-success me-1"></i>NHẬP MÃ OTP 6
+                                        SỐ</label>
                                     <span id="boDemNguocOTP" class="badge bg-secondary" style="font-size: 11px;">Chưa
                                         lấy mã</span>
                                 </div>

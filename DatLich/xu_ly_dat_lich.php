@@ -86,9 +86,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $conn->query("UPDATE tai_khoan SET ho_ten = '$ho_ten' WHERE id = $uid_curr");
         $_SESSION['ho_ten'] = trim($_POST['ho_ten']);
     }
-    // =========================================================================
+
     // KIỂM TRA 1: VÔ HIỆU HÓA ĐẶT LỊCH VÀO NGÀY GIỜ TRƯỚC THỜI ĐIỂM HIỆN TẠI
-    // =========================================================================
     $timestamp_chon = strtotime($ngay_gio);
     if ($timestamp_chon === false || $timestamp_chon < (time() - 60)) {
         echo "<script>
@@ -98,26 +97,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         exit();
     }
 
-    // =========================================================================
-    // KIỂM TRA 2: ĐẢM BẢO NHÂN VIÊN CẮT THUỘC ĐÚNG CƠ SỞ SALON ĐÃ CHỌN (2 THỢ / SALON)
-    // =========================================================================
+    // KIỂM TRA 2: ĐẢM BẢO NHÂN VIÊN CẮT THUỘC ĐÚNG CƠ SỞ SALON ĐÃ CHỌN (MỖI SALON 2 NHÂN VIÊN CẮT)
     $tho_co_so_vinh   = ['Vừ Xuân Công', 'Moong Văn Minh'];
     $tho_co_so_ky_son = ['Lầu Bá Trừ', 'Hờ Bá Chính'];
 
     if (strpos($salon_id, 'Cơ sở Vinh') !== false && !in_array($ky_thuat_vien, $tho_co_so_vinh)) {
         echo "<script>
-                alert('⚠️ Cơ sở TP. Vinh chỉ bao gồm 2 Kỹ thuật viên: Vừ Xuân Công và Moong Văn Minh. Vui lòng chọn đúng thợ của cơ sở!');
+                alert('⚠️ Cơ sở TP. Vinh chỉ bao gồm 2 Nhân viên cắt: Vừ Xuân Công và Moong Văn Minh. Vui lòng chọn đúng nhân viên của cơ sở!');
                 window.history.back();
               </script>";
         exit();
     }
     if (strpos($salon_id, 'Cơ sở Kỳ Sơn') !== false && !in_array($ky_thuat_vien, $tho_co_so_ky_son)) {
         echo "<script>
-                alert('⚠️ Cơ sở Kỳ Sơn chỉ bao gồm 2 Kỹ thuật viên: Lầu Bá Trừ và Hờ Bá Chính. Vui lòng chọn đúng thợ của cơ sở!');
+                alert('⚠️ Cơ sở Kỳ Sơn chỉ bao gồm 2 Nhân viên cắt: Lầu Bá Trừ và Hờ Bá Chính. Vui lòng chọn đúng nhân viên của cơ sở!');
                 window.history.back();
               </script>";
         exit();
     }
+
     // 1.1. Tự động cố định đặt lùi 30 phút với khách đặt trước nếu trùng giờ
     $thong_bao_lui_30p = "";
     $ngay_dat = date('Y-m-d', strtotime($ngay_gio));
@@ -458,7 +456,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     const webhookUrl = <?= json_encode($GOOGLE_SCRIPT_WEBHOOK_URL) ?>;
     const emailPayload = <?= $du_lieu_email_json ?>;
 
-    // Gửi thư xác nhận ngầm ngay       lập tức qua Google Apps Script Webhook
+    // Gửi thư xác nhận ngầm ngay lập tức qua Google Apps Script Webhook
     if (webhookUrl && webhookUrl.trim() !== "") {
         fetch(webhookUrl, {
             method: "POST",
