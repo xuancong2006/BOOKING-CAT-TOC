@@ -1,5 +1,8 @@
 <?php
+ob_start();
 session_start();
+mysqli_report(MYSQLI_REPORT_OFF);
+error_reporting(0);
 date_default_timezone_set('Asia/Ho_Chi_Minh');
 
 if ($_SERVER['HTTP_HOST'] == 'localhost' || strpos($_SERVER['HTTP_HOST'], '127.0.0.1') !== false) {
@@ -9,25 +12,178 @@ if ($_SERVER['HTTP_HOST'] == 'localhost' || strpos($_SERVER['HTTP_HOST'], '127.0
 }
 $conn_dv->set_charset("utf8mb4");
 
-// Đảm bảo bảng bang_dat_lich có cột email, cột thoi_gian_dat (lưu thời điểm khách bấm đặt) và cột dich_vu lưu được nhiều dịch vụ
+// Tự động nâng cấp bảng tai_khoan và bang_dat_lich để lưu đầy đủ thông tin cá nhân & mật khẩu
+$conn_dv->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `gioi_tinh` varchar(20) DEFAULT 'Nam';");
+$conn_dv->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `ngay_sinh` date DEFAULT NULL;");
+$conn_dv->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `dia_chi` varchar(255) DEFAULT NULL;");
+$conn_dv->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `avatar_icon` varchar(60) DEFAULT 'bi-person-bounding-box';");
+$conn_dv->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `cap_nhat_mk_luc` datetime DEFAULT NULL;");
+
 $conn_dv->query("ALTER TABLE `bang_dat_lich` ADD COLUMN IF NOT EXISTS `email` varchar(100) DEFAULT NULL;");
 $conn_dv->query("ALTER TABLE `bang_dat_lich` ADD COLUMN IF NOT EXISTS `thoi_gian_dat` timestamp DEFAULT CURRENT_TIMESTAMP;");
 $conn_dv->query("ALTER TABLE `bang_dat_lich` ADD COLUMN IF NOT EXISTS `trang_thai` varchar(50) DEFAULT 'Chờ phục vụ';");
 $conn_dv->query("ALTER TABLE `bang_dat_lich` MODIFY COLUMN `dich_vu` TEXT NOT NULL;");
 
-// Xử lý khi khách hàng cập nhật Họ và Tên trong Modal Tài khoản cá nhân
-if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_cap_nhat_ten_khach']) && isset($_SESSION['user_id'])) {
-    $ten_moi = $conn_dv->real_escape_string(trim($_POST['ho_ten_moi']));
-    if ($ten_moi !== "") {
-        $uid_up = (int)$_SESSION['user_id'];
+// Hàm trả về JSON sạch cho các thao tác AJAX trong Modal Avatar cá nhân
+function traJsonDatLich($arr) {
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($arr, JSON_UNESCAPED_UNICODE);
+    exit();
+}
+
+// Hàm kiểm tra mật khẩu mạnh chuẩn 5 tiêu chí như trong Video (8 Chars, A-Z, a-z, 123, @#$)
+function kiemTraMatKhauManhProfile($mk) {
+    $loi = array();
+    if (strlen($mk) < 8) $loi[] = "tối thiểu 8 ký tự (8 Chars)";
+    if (!preg_match('/[A-Z]/', $mk)) $loi[] = "chữ IN HOA (A-Z)";
+    if (!preg_match('/[a-z]/', $mk)) $loi[] = "chữ thường (a-z)";
+    if (!preg_match('/[0-9]/', $mk)) $loi[] = "chữ số (123)";
+    if (!preg_match('/[^A-Za-z0-9]/', $mk)) $loi[] = "ký tự đặc biệt (@#$)";
+
+    if (!empty($loi)) {
+        return array(
+            'hop_le' => false,
+            'msg'    => 'Mật khẩu mới chưa đủ mạnh! Cần có thêm: ' . implode(', ', $loi) . '.'
+        );
+    }
+    return array('hop_le' => true, 'msg' => 'OK');
+}
+
+// =========================================================================================
+// XỬ LÝ AJAX 1: CẬP NHẬT THÔNG TIN HỒ SƠ CÁ NHÂN KHI BẤM VÀO AVATAR
+// =========================================================================================
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'update_profile_info') {
+    if (!isset($_SESSION['user_id'])) {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Phiên đăng nhập đã hết hạn!'));
+    }
+
+    $uid_up      = (int)$_SESSION['user_id'];
+    $ten_moi_raw = trim($_POST['ho_ten_moi'] ?? '');
+    $gioi_tinh   = trim($_POST['gioi_tinh'] ?? 'Nam');
+    $ngay_sinh   = trim($_POST['ngay_sinh'] ?? '');
+    $dia_chi     = trim($_POST['dia_chi'] ?? '');
+    $avatar_icon = trim($_POST['avatar_icon'] ?? 'bi-person-bounding-box');
+
+    if ($ten_moi_raw === '') {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Họ và Tên không được để trống!'));
+    }
+
+    $ten_esc  = $conn_dv->real_escape_string($ten_moi_raw);
+    $gt_esc   = $conn_dv->real_escape_string($gioi_tinh);
+    $dc_esc   = $conn_dv->real_escape_string($dia_chi);
+    $avt_esc  = $conn_dv->real_escape_string($avatar_icon);
+    $ns_sql   = ($ngay_sinh !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $ngay_sinh)) ? "'" . $conn_dv->real_escape_string($ngay_sinh) . "'" : "NULL";
+
+    $sql_up = "UPDATE tai_khoan 
+               SET ho_ten = '$ten_esc', gioi_tinh = '$gt_esc', ngay_sinh = $ns_sql, dia_chi = '$dc_esc', avatar_icon = '$avt_esc' 
+               WHERE id = $uid_up";
+
+    if ($conn_dv->query($sql_up)) {
         $sdt_kh = $conn_dv->real_escape_string($_SESSION['so_dien_thoai'] ?? '');
-        $conn_dv->query("UPDATE tai_khoan SET ho_ten = '$ten_moi' WHERE id = $uid_up");
         if ($sdt_kh !== '') {
-            $conn_dv->query("UPDATE bang_dat_lich SET ho_ten = '$ten_moi' WHERE so_dien_thoai = '$sdt_kh'");
+            $conn_dv->query("UPDATE bang_dat_lich SET ho_ten = '$ten_esc' WHERE so_dien_thoai = '$sdt_kh'");
         }
-        $_SESSION['ho_ten'] = trim($_POST['ho_ten_moi']);
-        echo "<script>alert('✅ Đã cập nhật Họ và Tên thành công!'); window.location.href = 'DatLich.php';</script>";
-        exit();
+        $_SESSION['ho_ten'] = $ten_moi_raw;
+        $_SESSION['avatar_icon'] = $avatar_icon;
+
+        traJsonDatLich(array(
+            'status'      => 'success',
+            'ho_ten_moi'  => $ten_moi_raw,
+            'avatar_icon' => $avatar_icon,
+            'msg'         => '✅ Đã cập nhật thông tin hồ sơ cá nhân thành công!'
+        ));
+    } else {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Lỗi CSDL: ' . $conn_dv->error));
+    }
+}
+
+// =========================================================================================
+// XỬ LÝ AJAX 2: ĐỔI MẬT KHẨU MẠNH TRONG MODAL AVATAR CÁ NHÂN
+// =========================================================================================
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['ajax_action']) && $_POST['ajax_action'] == 'change_strong_password') {
+    if (!isset($_SESSION['user_id'])) {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Vui lòng đăng nhập lại để đổi mật khẩu!'));
+    }
+
+    $uid_up = (int)$_SESSION['user_id'];
+    $mk_cu  = trim($_POST['mat_khau_hien_tai'] ?? '');
+    $mk_moi = trim($_POST['mat_khau_moi'] ?? '');
+    $mk_cf  = trim($_POST['xac_nhan_mat_khau_moi'] ?? '');
+
+    if ($mk_cu === '' || $mk_moi === '' || $mk_cf === '') {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Vui lòng nhập đầy đủ mật khẩu hiện tại và mật khẩu mới!'));
+    }
+
+    // Kiểm tra mật khẩu hiện tại trong CSDL
+    $res_u = $conn_dv->query("SELECT mat_khau FROM tai_khoan WHERE id = $uid_up LIMIT 1");
+    if (!$res_u || $res_u->num_rows == 0) {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Không tìm thấy tài khoản của bạn!'));
+    }
+    $row_u = $res_u->fetch_assoc();
+    if ($row_u['mat_khau'] !== $mk_cu) {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Mật khẩu hiện tại không chính xác!'));
+    }
+
+    // Kiểm tra mật khẩu mới phải đạt chuẩn MẠNH (8 Chars, A-Z, a-z, 123, @#$)
+    $check_strong = kiemTraMatKhauManhProfile($mk_moi);
+    if (!$check_strong['hop_le']) {
+        traJsonDatLich(array('status' => 'error', 'msg' => $check_strong['msg']));
+    }
+
+    if ($mk_moi !== $mk_cf) {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Mật khẩu xác nhận nhập lại không trùng khớp!'));
+    }
+
+    if ($mk_moi === $mk_cu) {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Mật khẩu mới phải khác mật khẩu hiện tại đang dùng!'));
+    }
+
+    $mk_moi_esc = $conn_dv->real_escape_string($mk_moi);
+    $now_sql    = date('Y-m-d H:i:s');
+    if ($conn_dv->query("UPDATE tai_khoan SET mat_khau = '$mk_moi_esc', cap_nhat_mk_luc = '$now_sql' WHERE id = $uid_up")) {
+        traJsonDatLich(array(
+            'status'       => 'success',
+            'thoi_gian_mk' => date('H:i - d/m/Y'),
+            'msg'          => '✅ Đổi mật khẩu mạnh mới thành công! Mật khẩu của bạn đã được bảo vệ an toàn.'
+        ));
+    } else {
+        traJsonDatLich(array('status' => 'error', 'msg' => 'Không thể cập nhật mật khẩu: ' . $conn_dv->error));
+    }
+}
+
+// Lấy thông tin chi tiết của tài khoản đang đăng nhập từ CSDL để hiển thị lên Modal Avatar
+$da_dang_nhap = isset($_SESSION['user_id']);
+$thong_tin_user = array(
+    'ho_ten'          => $_SESSION['ho_ten'] ?? '',
+    'email'           => $_SESSION['email'] ?? '',
+    'so_dien_thoai'   => $_SESSION['so_dien_thoai'] ?? '',
+    'gioi_tinh'       => 'Nam',
+    'ngay_sinh'       => '',
+    'dia_chi'         => '',
+    'avatar_icon'     => 'bi-person-bounding-box',
+    'cap_nhat_mk_luc' => null,
+    'ngay_tao'        => null
+);
+
+if ($da_dang_nhap) {
+    $uid_curr = (int)$_SESSION['user_id'];
+    $res_info = $conn_dv->query("SELECT * FROM tai_khoan WHERE id = $uid_curr LIMIT 1");
+    if ($res_info && $res_info->num_rows > 0) {
+        $r_info = $res_info->fetch_assoc();
+        $thong_tin_user['ho_ten']          = $r_info['ho_ten'];
+        $thong_tin_user['email']           = $r_info['email'];
+        $thong_tin_user['so_dien_thoai']   = $r_info['so_dien_thoai'];
+        $thong_tin_user['gioi_tinh']       = !empty($r_info['gioi_tinh']) ? $r_info['gioi_tinh'] : 'Nam';
+        $thong_tin_user['ngay_sinh']       = $r_info['ngay_sinh'] ?? '';
+        $thong_tin_user['dia_chi']         = $r_info['dia_chi'] ?? '';
+        $thong_tin_user['avatar_icon']     = !empty($r_info['avatar_icon']) ? $r_info['avatar_icon'] : 'bi-person-bounding-box';
+        $thong_tin_user['cap_nhat_mk_luc'] = $r_info['cap_nhat_mk_luc'];
+        $thong_tin_user['ngay_tao']        = $r_info['ngay_tao'];
+        $_SESSION['ho_ten']                = $r_info['ho_ten'];
+        $_SESSION['avatar_icon']           = $thong_tin_user['avatar_icon'];
     }
 }
 
@@ -43,7 +199,7 @@ $conn_dv->query("CREATE TABLE IF NOT EXISTS `lich_ban_tho` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
 
-// Lấy bảng giá toàn bộ dịch vụ để hiển thị danh sách chọn nhiều dịch vụ & tính tổng tiền
+// Lấy bảng giá toàn bộ dịch vụ
 $bang_gia_map = [];
 $danh_sach_dich_vu = [];
 $res_all_dv = $conn_dv->query("SELECT ten_dich_vu, gia_1 FROM dich_vu");
@@ -58,7 +214,6 @@ if ($res_all_dv && $res_all_dv->num_rows > 0) {
     }
 }
 
-// Hàm tính tổng tiền của chuỗi nhiều dịch vụ (ngăn cách bởi dấu phẩy)
 function tinhTongTienChuoiDichVu($chuoi_dv, $map_gia) {
     $cac_dv = explode(',', $chuoi_dv);
     $tong = 0;
@@ -71,7 +226,7 @@ function tinhTongTienChuoiDichVu($chuoi_dv, $map_gia) {
     return ($tong > 0) ? $tong : 100000;
 }
 
-// 1. Lấy danh sách lịch bận của thợ từ bảng lich_ban_tho
+// 1. Lấy danh sách lịch bận của thợ
 $lich_ban_arr = [];
 $res_ban = $conn_dv->query("SELECT ky_thuat_vien, ngay_ban, gio_bat_dau, gio_ket_thuc, ly_do FROM lich_ban_tho WHERE ngay_ban >= CURDATE()");
 if ($res_ban && $res_ban->num_rows > 0) {
@@ -80,7 +235,7 @@ if ($res_ban && $res_ban->num_rows > 0) {
     }
 }
 
-// 2. Lấy danh sách các lịch hẹn ĐÃ ĐẶT trong bảng bang_dat_lich (từ hôm nay trở đi)
+// 2. Lấy danh sách các lịch hẹn ĐÃ ĐẶT
 $lich_da_dat_arr = [];
 $sql_da_dat = "SELECT id, ho_ten, salon_id, dich_vu, ky_thuat_vien, 
                       DATE(ngay_gio) AS ngay_hen, 
@@ -98,9 +253,7 @@ if ($res_da_dat && $res_da_dat->num_rows > 0) {
     }
 }
 
-$da_dang_nhap = isset($_SESSION['user_id']);
-
-// 3. Lấy LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY từ bảng SQL bang_dat_lich
+// 3. Lấy LỊCH SỬ ĐẶT LỊCH GẦN ĐÂY
 $lich_su_gan_day_sql = [];
 $sql_ls_recent = "SELECT b.*, 
                          DATE_FORMAT(COALESCE(b.thoi_gian_dat, b.ngay_gio), '%H:%i - %d/%m/%Y') AS thoi_gian_tao_dep,
@@ -166,7 +319,6 @@ function cheSDTKhach($sdt) {
         border: 1.5px solid #adb5bd !important;
     }
 
-    /* CSS cho ảnh Logo hình tròn của Salon ở phía trên tiêu đề Đặt Lịch Hẹn */
     .salon-circle-logo-wrapper {
         display: inline-block;
         padding: 4px;
@@ -200,7 +352,6 @@ function cheSDTKhach($sdt) {
         font-weight: 700;
     }
 
-    /* Giao diện chọn nhiều dịch vụ chuyên nghiệp */
     .multi-service-dropdown-btn {
         border: 1px solid #dee2e6;
         border-radius: 8px;
@@ -263,6 +414,226 @@ function cheSDTKhach($sdt) {
         font-size: 0.8rem;
         font-weight: 600;
         margin: 2px 4px 2px 0;
+    }
+
+    /* ======================================================================= */
+    /* GIAO DIỆN MODAL HỒ SƠ CÁ NHÂN & BỘ KIỂM TRA MẬT KHẨU MẠNH NHƯ VIDEO     */
+    /* ======================================================================= */
+    .profile-hero-banner {
+        background: linear-gradient(135deg, #0f1216 0%, #0b4a4d 100%);
+        padding: 26px 24px 20px;
+        color: #fff;
+        position: relative;
+        border-bottom: 3px solid #e6b96f;
+    }
+
+    .profile-avatar-circle {
+        width: 78px;
+        height: 78px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #e6b96f 0%, #c09e6c 100%);
+        color: #111;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2.3rem;
+        border: 3px solid #fff;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.28);
+        flex-shrink: 0;
+    }
+
+    .avatar-choice-item {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        border: 2px solid #e2e8f0;
+        background: #f8fafc;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        color: #334155;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .avatar-choice-item:hover,
+    .avatar-choice-item.active {
+        border-color: #0b4a4d;
+        background: #0b4a4d;
+        color: #e6b96f;
+        transform: translateY(-2px);
+    }
+
+    .profile-nav-pills .nav-link {
+        color: #475569;
+        font-weight: 700;
+        border-radius: 10px;
+        padding: 10px 16px;
+        font-size: 0.9rem;
+    }
+
+    .profile-nav-pills .nav-link.active {
+        background: #0b4a4d;
+        color: #e6b96f;
+    }
+
+    /* CSS Khung Password Strength giống hệt Video mẫu */
+    .pw-meter-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 18px;
+        padding: 20px 18px 16px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .pw-input-box {
+        position: relative;
+        width: 100%;
+    }
+
+    .pw-input-box input {
+        width: 100%;
+        height: 54px;
+        padding: 0 46px 0 18px;
+        border: 2px solid #cbd5e1;
+        border-radius: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #0f172a;
+        background: #fff;
+        outline: none;
+        transition: all 0.3s ease;
+    }
+
+    .pw-input-box label {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        background: #fff;
+        padding: 0 6px;
+        font-size: 14px;
+        font-weight: 500;
+        pointer-events: none;
+        transition: 0.25s ease;
+    }
+
+    .pw-input-box input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    }
+
+    .pw-input-box input:focus+label,
+    .pw-input-box input:not(:placeholder-shown)+label {
+        top: 0;
+        font-size: 12px;
+        color: #2563eb;
+        font-weight: 700;
+    }
+
+    .pw-eye-btn {
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 19px;
+        color: #94a3b8;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.2s ease;
+    }
+
+    .pw-eye-btn:hover {
+        color: #2563eb;
+    }
+
+    .pw-strength-box {
+        margin-top: 14px;
+    }
+
+    .pw-strength-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 13.5px;
+    }
+
+    .pw-strength-top span:first-child {
+        color: #4b5563;
+        font-weight: 600;
+    }
+
+    .pw-strength-text {
+        font-weight: 700;
+        transition: color 0.3s ease;
+    }
+
+    .pw-strength-text.weak {
+        color: #ef4444;
+    }
+
+    .pw-strength-text.medium {
+        color: #f59e0b;
+    }
+
+    .pw-strength-text.strong {
+        color: #22c55e;
+    }
+
+    .pw-progress {
+        width: 100%;
+        height: 8px;
+        background: #e5e7eb;
+        border-radius: 30px;
+        overflow: hidden;
+    }
+
+    .pw-progress-bar {
+        width: 0%;
+        height: 100%;
+        background: #ef4444;
+        border-radius: 30px;
+        transition: width 0.35s ease, background-color 0.35s ease;
+    }
+
+    .pw-rules {
+        margin-top: 14px;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .pw-rule {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #9ca3af;
+        transition: color 0.25s ease;
+    }
+
+    .pw-rule .pw-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #d1d5db;
+        display: inline-block;
+        transition: all 0.25s ease;
+    }
+
+    .pw-rule.active {
+        color: #2563eb;
+    }
+
+    .pw-rule.active .pw-dot {
+        background: #2563eb;
+        box-shadow: 0 0 8px rgba(37, 99, 235, 0.55);
+        transform: scale(1.12);
     }
     </style>
 </head>
@@ -404,18 +775,18 @@ function cheSDTKhach($sdt) {
     }
 
     .btn-nav-user {
-        background: rgba(255, 255, 255, 0.06);
+        background: rgba(255, 255, 255, 0.08);
         color: var(--cmtc-gold) !important;
-        border: 1px solid rgba(230, 185, 111, 0.45);
+        border: 1.5px solid rgba(230, 185, 111, 0.55);
         font-weight: 600;
         font-size: 0.86rem;
-        padding: 7px 14px;
+        padding: 6px 14px;
         border-radius: 50px;
         transition: all 0.25s ease;
         text-decoration: none;
         display: inline-flex;
         align-items: center;
-        gap: 6px;
+        gap: 7px;
     }
 
     .btn-nav-user:hover {
@@ -429,10 +800,6 @@ function cheSDTKhach($sdt) {
         padding: 6px 10px;
         color: var(--cmtc-gold) !important;
         background: rgba(230, 185, 111, 0.08);
-    }
-
-    .cmtc-toggler:focus {
-        box-shadow: 0 0 0 3px rgba(230, 185, 111, 0.25) !important;
     }
 
     .cmtc-offcanvas {
@@ -541,11 +908,12 @@ function cheSDTKhach($sdt) {
             </a>
 
             <div class="d-flex align-items-center gap-2 d-lg-none">
-                <?php if (isset($_SESSION['user_id'])): ?>
-                <a class="btn-nav-user py-1 px-2" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">
-                    <i class="bi bi-person-circle"></i>
-                    <span class="text-truncate"
-                        style="max-width: 85px;"><?= htmlspecialchars($_SESSION['ho_ten']) ?></span>
+                <?php if ($da_dang_nhap): ?>
+                <a class="btn-nav-user py-1 px-2" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan"
+                    title="Hồ sơ & Đổi mật khẩu">
+                    <i id="navMobileAvatarIcon" class="bi <?= htmlspecialchars($thong_tin_user['avatar_icon']) ?>"></i>
+                    <span class="text-truncate lbl-ten-khach-hien-thi"
+                        style="max-width: 85px;"><?= htmlspecialchars($thong_tin_user['ho_ten']) ?></span>
                 </a>
                 <?php endif; ?>
                 <button class="navbar-toggler cmtc-toggler" type="button" data-bs-toggle="offcanvas"
@@ -557,22 +925,22 @@ function cheSDTKhach($sdt) {
             <div class="collapse navbar-collapse d-none d-lg-flex" id="menuChinh">
                 <ul class="navbar-nav mx-auto mb-2 mb-lg-0 gap-1">
                     <li class="nav-item">
-                        <a class="nav-link cmtc-nav-link " href="../TrangChu/index.php">
+                        <a class="nav-link cmtc-nav-link" href="../TrangChu/index.php">
                             <i class="bi bi-house-door"></i>Trang Chủ
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link cmtc-nav-link " href="../DichVu/DichVu.php">
+                        <a class="nav-link cmtc-nav-link" href="../DichVu/DichVu.php">
                             <i class="bi bi-scissors"></i>Dịch Vụ
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link cmtc-nav-link " href="../BangGia/BangGia.php">
+                        <a class="nav-link cmtc-nav-link" href="../BangGia/BangGia.php">
                             <i class="bi bi-tags"></i>Bảng Giá
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link cmtc-nav-link " href="../ThongTin/ThongTin.php">
+                        <a class="nav-link cmtc-nav-link" href="../ThongTin/ThongTin.php">
                             <i class="bi bi-info-circle"></i>Thông Tin
                         </a>
                     </li>
@@ -588,9 +956,14 @@ function cheSDTKhach($sdt) {
                         <i class="bi bi-calendar-plus-fill"></i>Đặt Lịch Ngay
                     </a>
 
-                    <?php if (isset($_SESSION['user_id'])): ?>
-                    <a class="btn-nav-user" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">
-                        <i class="bi bi-person-circle"></i><?= htmlspecialchars($_SESSION['ho_ten']) ?> (Tài khoản)
+                    <?php if ($da_dang_nhap): ?>
+                    <a class="btn-nav-user" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan"
+                        title="Nhấn vào Avatar để cập nhật thông tin & đổi mật khẩu">
+                        <i id="navDesktopAvatarIcon"
+                            class="bi <?= htmlspecialchars($thong_tin_user['avatar_icon']) ?> fs-6"></i>
+                        <span class="lbl-ten-khach-hien-thi"><?= htmlspecialchars($thong_tin_user['ho_ten']) ?></span>
+                        <span class="badge bg-warning text-dark rounded-pill" style="font-size: 10px;">Hồ sơ &
+                            MK</span>
                     </a>
                     <?php if (isset($_SESSION['vai_tro']) && $_SESSION['vai_tro'] == 'admin'): ?>
                     <a class="btn btn-info btn-sm fw-bold rounded-pill px-3" href="../Login/admin.php">
@@ -620,35 +993,41 @@ function cheSDTKhach($sdt) {
         </div>
         <div class="offcanvas-body d-flex flex-column justify-content-between p-3">
             <div>
-                <?php if (isset($_SESSION['user_id'])): ?>
+                <?php if ($da_dang_nhap): ?>
                 <div class="p-3 rounded-3 mb-3 border border-warning border-opacity-50"
                     style="background: rgba(230, 185, 111, 0.1);">
-                    <div class="d-flex align-items-center justify-content-between mb-1">
-                        <span class="fw-bold text-warning"><i
-                                class="bi bi-person-check-fill me-1"></i><?= htmlspecialchars($_SESSION['ho_ten']) ?></span>
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <span class="fw-bold text-warning">
+                            <i class="bi <?= htmlspecialchars($thong_tin_user['avatar_icon']) ?> me-1"></i>
+                            <span
+                                class="lbl-ten-khach-hien-thi"><?= htmlspecialchars($thong_tin_user['ho_ten']) ?></span>
+                        </span>
                         <button type="button" class="btn btn-warning btn-sm py-0 px-2 fw-bold"
-                            data-bs-dismiss="offcanvas" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">Sửa
-                            tên</button>
+                            data-bs-dismiss="offcanvas" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">
+                            Hồ sơ & Đổi MK
+                        </button>
                     </div>
-                    <div class="small text-light opacity-75"><?= htmlspecialchars($_SESSION['so_dien_thoai'] ?? '') ?> •
-                        <?= htmlspecialchars($_SESSION['email'] ?? '') ?></div>
+                    <div class="small text-light opacity-75">
+                        <?= htmlspecialchars($thong_tin_user['so_dien_thoai']) ?> •
+                        <?= htmlspecialchars($thong_tin_user['email']) ?>
+                    </div>
                 </div>
                 <?php endif; ?>
 
                 <div class="mb-3">
-                    <a href="../TrangChu/index.php" class="cmtc-mobile-link ">
+                    <a href="../TrangChu/index.php" class="cmtc-mobile-link">
                         <span><i class="bi bi-house-door-fill me-2 text-warning"></i>Trang Chủ</span>
                         <i class="bi bi-chevron-right small opacity-50"></i>
                     </a>
-                    <a href="../DichVu/DichVu.php" class="cmtc-mobile-link ">
+                    <a href="../DichVu/DichVu.php" class="cmtc-mobile-link">
                         <span><i class="bi bi-scissors me-2 text-warning"></i>Dịch Vụ Chăm Sóc Tóc</span>
                         <i class="bi bi-chevron-right small opacity-50"></i>
                     </a>
-                    <a href="../BangGia/BangGia.php" class="cmtc-mobile-link ">
+                    <a href="../BangGia/BangGia.php" class="cmtc-mobile-link">
                         <span><i class="bi bi-tags-fill me-2 text-warning"></i>Bảng Giá Niêm Yết</span>
                         <i class="bi bi-chevron-right small opacity-50"></i>
                     </a>
-                    <a href="../ThongTin/ThongTin.php" class="cmtc-mobile-link ">
+                    <a href="../ThongTin/ThongTin.php" class="cmtc-mobile-link">
                         <span><i class="bi bi-info-circle-fill me-2 text-warning"></i>Thông Tin & Chi Nhánh</span>
                         <i class="bi bi-chevron-right small opacity-50"></i>
                     </a>
@@ -678,11 +1057,11 @@ function cheSDTKhach($sdt) {
 
     <!-- THANH ĐIỀU HƯỚNG CỐ ĐỊNH DƯỚI ĐÁY MÀN HÌNH ĐIỆN THOẠI (MOBILE BOTTOM BAR) -->
     <div class="cmtc-mobile-bottom-bar d-lg-none">
-        <a href="../TrangChu/index.php" class="cmtc-bottom-item ">
+        <a href="../TrangChu/index.php" class="cmtc-bottom-item">
             <i class="bi bi-house-door-fill"></i>
             <span>Trang Chủ</span>
         </a>
-        <a href="../DichVu/DichVu.php" class="cmtc-bottom-item ">
+        <a href="../DichVu/DichVu.php" class="cmtc-bottom-item">
             <i class="bi bi-scissors"></i>
             <span>Dịch Vụ</span>
         </a>
@@ -692,75 +1071,302 @@ function cheSDTKhach($sdt) {
             </div>
             <span class="text-warning fw-bold mt-1">Đặt Lịch</span>
         </a>
-        <a href="../BangGia/BangGia.php" class="cmtc-bottom-item ">
+        <a href="../BangGia/BangGia.php" class="cmtc-bottom-item">
             <i class="bi bi-tags-fill"></i>
             <span>Bảng Giá</span>
         </a>
-        <?php if (isset($_SESSION['user_id'])): ?>
+        <?php if ($da_dang_nhap): ?>
         <a href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan" class="cmtc-bottom-item">
-            <i class="bi bi-person-Check-fill bi-person-circle text-warning"></i>
-            <span class="text-warning text-truncate"
-                style="max-width: 60px;"><?= htmlspecialchars($_SESSION['ho_ten']) ?></span>
+            <i class="bi <?= htmlspecialchars($thong_tin_user['avatar_icon']) ?> text-warning"></i>
+            <span class="text-warning text-truncate lbl-ten-khach-hien-thi"
+                style="max-width: 65px;"><?= htmlspecialchars($thong_tin_user['ho_ten']) ?></span>
         </a>
         <?php else: ?>
-        <a href="../ThongTin/ThongTin.php" class="cmtc-bottom-item ">
+        <a href="../ThongTin/ThongTin.php" class="cmtc-bottom-item">
             <i class="bi bi-geo-alt-fill"></i>
             <span>Thông Tin</span>
         </a>
         <?php endif; ?>
     </div>
 
-    <?php if (isset($_SESSION['user_id'])): ?>
-    <!-- MODAL THÔNG TIN TÀI KHOẢN CÁ NHÂN (CHỈ CHO SỬA TÊN, KHÓA EMAIL & SĐT IN ĐẬM) -->
+    <?php if ($da_dang_nhap): ?>
+    <!-- ========================================================================= -->
+    <!-- MODAL HỒ SƠ CÁ NHÂN & ĐỔI MẬT KHẨU MẠNH KHI NHẤN VÀO AVATAR               -->
+    <!-- ========================================================================= -->
     <div class="modal fade" id="modalThongTinCaNhan" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content border-0 shadow-lg rounded-4">
-                <div class="modal-header bg-dark text-warning border-0">
-                    <h5 class="modal-title fw-bold"><i class="bi bi-person-badge me-2"></i>Thông Tin Tài Khoản Cá Nhân
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+
+                <!-- Header Banner sang trọng hiển thị Avatar, Tên, Số đơn đã đặt -->
+                <div class="profile-hero-banner">
+                    <button type="button" class="btn-close btn-close-white position-absolute top-0 end-0 m-3"
+                        data-bs-dismiss="modal"></button>
+                    <div class="d-flex flex-column flex-sm-row align-items-center gap-3">
+                        <div class="profile-avatar-circle" id="heroAvatarPreview">
+                            <i class="bi <?= htmlspecialchars($thong_tin_user['avatar_icon']) ?>"></i>
+                        </div>
+                        <div class="text-center text-sm-start">
+                            <div
+                                class="d-flex flex-wrap align-items-center justify-content-center justify-content-sm-start gap-2">
+                                <h4 class="fw-bold mb-0 text-warning lbl-ten-khach-hien-thi">
+                                    <?= htmlspecialchars($thong_tin_user['ho_ten']) ?>
+                                </h4>
+                                <span class="badge bg-success bg-opacity-75 border border-light">
+                                    <i class="bi bi-patch-check-fill me-1"></i>Đã xác thực OTP
+                                </span>
+                            </div>
+                            <div class="small text-white-50 mt-1">
+                                <i
+                                    class="bi bi-envelope-at me-1 text-warning"></i><?= htmlspecialchars($thong_tin_user['email']) ?>
+                                <span class="mx-2">•</span>
+                                <i
+                                    class="bi bi-telephone-fill me-1 text-warning"></i><?= htmlspecialchars($thong_tin_user['so_dien_thoai']) ?>
+                            </div>
+                            <div class="d-flex flex-wrap justify-content-center justify-content-sm-start gap-2 mt-2">
+                                <span class="badge bg-dark border border-secondary fw-normal">
+                                    <i class="bi bi-calendar2-check text-warning me-1"></i>Đã đặt:
+                                    <strong><?= count($lich_su_cua_toi) ?> lịch hẹn</strong>
+                                </span>
+                                <span class="badge bg-dark border border-secondary fw-normal" id="badgeCapNhatMK">
+                                    <i class="bi bi-shield-lock text-info me-1"></i>Đổi MK gần nhất:
+                                    <strong><?= !empty($thong_tin_user['cap_nhat_mk_luc']) ? date('H:i - d/m/Y', strtotime($thong_tin_user['cap_nhat_mk_luc'])) : 'Khi tạo tài khoản' ?></strong>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <form method="POST" action="">
-                    <div class="modal-body p-4">
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-dark"><i class="bi bi-person me-1"></i>HỌ VÀ TÊN
-                                (Được phép chỉnh sửa)</label>
-                            <input type="text" name="ho_ten_moi" class="form-control fw-semibold border-warning"
-                                value="<?= htmlspecialchars($_SESSION['ho_ten'] ?? '') ?>" required>
+
+                <div class="modal-body p-4 bg-light">
+                    <!-- Thanh chuyển Tab: Cập nhật thông tin cá nhân & Đổi mật khẩu mạnh -->
+                    <ul class="nav nav-pills nav-fill profile-nav-pills bg-white p-1 rounded-3 shadow-sm mb-4"
+                        id="profileModalTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="tab-info-btn" data-bs-toggle="pill"
+                                data-bs-target="#paneProfileInfo" type="button" role="tab">
+                                <i class="bi bi-person-lines-fill me-1"></i>Thông Tin Cá Nhân
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tab-password-btn" data-bs-toggle="pill"
+                                data-bs-target="#paneProfilePassword" type="button" role="tab">
+                                <i class="bi bi-shield-lock-fill me-1"></i>Đổi Mật Khẩu Bảo Mật
+                            </button>
+                        </li>
+                    </ul>
+
+                    <div class="tab-content">
+                        <!-- ========================================================= -->
+                        <!-- TAB 1: CẬP NHẬT THÔNG TIN HỒ SƠ CÁ NHÂN & AVATAR           -->
+                        <!-- ========================================================= -->
+                        <div class="tab-pane fade show active" id="paneProfileInfo" role="tabpanel">
+                            <div id="alertProfileInfo" class="alert d-none small fw-semibold py-2"></div>
+
+                            <form id="formCapNhatHoSo" onsubmit="return luuThongTinCaNhanAjax(event);">
+                                <input type="hidden" id="inputAvatarIcon" name="avatar_icon"
+                                    value="<?= htmlspecialchars($thong_tin_user['avatar_icon']) ?>">
+
+                                <div class="mb-3 bg-white p-3 rounded-3 border">
+                                    <label class="form-label fw-bold small text-dark d-block mb-2">
+                                        <i class="bi bi-stars text-warning me-1"></i>CHỌN BIỂU TƯỢNG AVATAR CÁ NHÂN:
+                                    </label>
+                                    <div class="d-flex flex-wrap gap-2">
+                                        <?php
+                                        $ds_icons = [
+                                            'bi-person-bounding-box',
+                                            'bi-person-circle',
+                                            'bi-person-hearts',
+                                            'bi-person-workspace',
+                                            'bi-emoji-sunglasses-fill',
+                                            'bi-Scissors',
+                                            'bi-gem',
+                                            'bi-award-fill'
+                                        ];
+                                        foreach ($ds_icons as $ic):
+                                            $ic_norm = strtolower($ic);
+                                            $is_act = ($thong_tin_user['avatar_icon'] === $ic_norm) ? 'active' : '';
+                                        ?>
+                                        <div class="avatar-choice-item <?= $is_act ?>"
+                                            onclick="chonBieuTuongAvatar('<?= $ic_norm ?>', this)">
+                                            <i class="bi <?= $ic_norm ?>"></i>
+                                        </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-dark">
+                                            <i class="bi bi-person-fill text-primary me-1"></i>HỌ VÀ TÊN KHÁCH HÀNG
+                                        </label>
+                                        <input type="text" id="inputHoTenProfile" name="ho_ten_moi"
+                                            class="form-control fw-semibold"
+                                            value="<?= htmlspecialchars($thong_tin_user['ho_ten']) ?>" required>
+                                    </div>
+
+                                    <div class="col-md-3 col-6">
+                                        <label class="form-label fw-bold small text-dark">
+                                            <i class="bi bi-gender-ambiguous text-info me-1"></i>GIỚI TÍNH
+                                        </label>
+                                        <select name="gioi_tinh" id="inputGioiTinhProfile"
+                                            class="form-select fw-semibold">
+                                            <option value="Nam"
+                                                <?= ($thong_tin_user['gioi_tinh'] == 'Nam') ? 'selected' : '' ?>>Nam
+                                            </option>
+                                            <option value="Nữ"
+                                                <?= ($thong_tin_user['gioi_tinh'] == 'Nữ') ? 'selected' : '' ?>>Nữ
+                                            </option>
+                                            <option value="Khác"
+                                                <?= ($thong_tin_user['gioi_tinh'] == 'Khác') ? 'selected' : '' ?>>Khác
+                                            </option>
+                                        </select>
+                                    </div>
+
+                                    <div class="col-md-3 col-6">
+                                        <label class="form-label fw-bold small text-dark">
+                                            <i class="bi bi-cake2-fill text-danger me-1"></i>NGÀY SINH
+                                        </label>
+                                        <input type="date" name="ngay_sinh" id="inputNgaySinhProfile"
+                                            class="form-control fw-semibold"
+                                            value="<?= htmlspecialchars($thong_tin_user['ngay_sinh']) ?>">
+                                    </div>
+
+                                    <div class="col-md-12">
+                                        <label class="form-label fw-bold small text-dark">
+                                            <i class="bi bi-geo-alt-fill text-success me-1"></i>ĐỊA CHỈ LIÊN HỆ / KHU
+                                            VỰC
+                                        </label>
+                                        <input type="text" name="dia_chi" id="inputDiaChiProfile" class="form-control"
+                                            placeholder="VD: Phường Vinh Phú, TP. Vinh, Nghệ An..."
+                                            value="<?= htmlspecialchars($thong_tin_user['dia_chi']) ?>">
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-muted">
+                                            <i class="bi bi-envelope-lock me-1"></i>ĐỊA CHỈ GMAIL (Đã xác thực cố định)
+                                        </label>
+                                        <input type="email"
+                                            class="form-control bg-secondary bg-opacity-10 text-dark fw-bold"
+                                            value="<?= htmlspecialchars($thong_tin_user['email']) ?>" readonly disabled>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label class="form-label fw-bold small text-muted">
+                                            <i class="bi bi-telephone-fill me-1"></i>SỐ ĐIỆN THOẠI (Đã xác thực cố định)
+                                        </label>
+                                        <input type="text"
+                                            class="form-control bg-secondary bg-opacity-10 text-dark fw-bold"
+                                            value="<?= htmlspecialchars($thong_tin_user['so_dien_thoai']) ?>" readonly
+                                            disabled>
+                                    </div>
+                                </div>
+
+                                <div
+                                    class="d-flex flex-wrap justify-content-between align-items-center pt-3 mt-3 border-top gap-2">
+                                    <div class="d-flex gap-2">
+                                        <a href="../DatLich/DatLich.php#bangLichSuGanDaySQL"
+                                            onclick="bootstrap.Modal.getInstance(document.getElementById('modalThongTinCaNhan')).hide();"
+                                            class="btn btn-outline-dark btn-sm fw-semibold">
+                                            <i class="bi bi-clock-history me-1"></i>Lịch Sử Đặt
+                                        </a>
+                                        <a href="../Login/login.php?logout=1"
+                                            class="btn btn-outline-danger btn-sm fw-semibold">
+                                            <i class="bi bi-box-arrow-right me-1"></i>Đăng xuất
+                                        </a>
+                                    </div>
+                                    <button type="submit" id="btnLuuHoSoAjax" class="btn btn-warning fw-bold px-4">
+                                        <i class="bi bi-check2-circle me-1"></i>Lưu Thông Tin Hồ Sơ
+                                    </button>
+                                </div>
+                            </form>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted"><i
-                                    class="bi bi-envelope-lock me-1"></i>ĐỊA CHỈ EMAIL (Cố định - Không thể thay
-                                đổi)</label>
-                            <input type="email" class="form-control bg-secondary bg-opacity-10 text-dark fw-bold"
-                                value="<?= htmlspecialchars($_SESSION['email'] ?? '') ?>" readonly disabled
-                                style="cursor: not-allowed;">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label fw-bold small text-muted"><i
-                                    class="bi bi-telephone-fill me-1"></i>SỐ ĐIỆN THOẠI (Cố định - Không thể thay
-                                đổi)</label>
-                            <input type="text" class="form-control bg-secondary bg-opacity-10 text-dark fw-bold"
-                                value="<?= htmlspecialchars($_SESSION['so_dien_thoai'] ?? '') ?>" readonly disabled
-                                style="cursor: not-allowed;">
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center pt-2 border-top mt-3">
-                            <a href="../DatLich/DatLich.php#bangLichSuGanDaySQL"
-                                class="btn btn-outline-dark btn-sm fw-semibold">
-                                <i class="bi bi-clock-history me-1"></i>Xem Lịch Sử Đặt Lịch
-                            </a>
-                            <a href="../Login/login.php?logout=1" class="btn btn-outline-danger btn-sm fw-semibold">
-                                <i class="bi bi-box-arrow-right me-1"></i>Đăng xuất
-                            </a>
+
+                        <!-- ========================================================= -->
+                        <!-- TAB 2: ĐỔI MẬT KHẨU MẠNH (GIAO DIỆN GIỐNG HỆT VIDEO)       -->
+                        <!-- ========================================================= -->
+                        <div class="tab-pane fade" id="paneProfilePassword" role="tabpanel">
+                            <div id="alertProfilePassword" class="alert d-none small fw-semibold py-2"></div>
+
+                            <form id="formDoiMatKhauManh" onsubmit="return doiMatKhauManhAjax(event);">
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold small text-dark">
+                                        <i class="bi bi-key-fill text-warning me-1"></i>MẬT KHẨU HIỆN TẠI ĐANG DÙNG
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="password" id="inputMKHienTaiProfile" name="mat_khau_hien_tai"
+                                            class="form-control"
+                                            placeholder="Nhập mật khẩu hiện tại (hoặc mật khẩu được cấp qua Gmail)..."
+                                            required>
+                                        <button class="btn btn-outline-secondary" type="button"
+                                            onclick="batTatMatKhauProfile('inputMKHienTaiProfile', this.querySelector('i'))">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- KHUNG CREATE A STRONG PASSWORD GIỐNG HỆT VIDEO MẪU -->
+                                <div class="pw-meter-card mb-3" id="boxStrengthProfile">
+                                    <div class="text-center fw-bold text-dark mb-3" style="font-size: 16px;">
+                                        Create A Strong Password
+                                    </div>
+
+                                    <div class="pw-input-box">
+                                        <input type="password" id="inputMKMoiProfile" name="mat_khau_moi"
+                                            placeholder=" " autocomplete="new-password" required />
+                                        <label for="inputMKMoiProfile">Password</label>
+                                        <i class="bi bi-eye pw-eye-btn"
+                                            onclick="batTatMatKhauProfile('inputMKMoiProfile', this)"></i>
+                                    </div>
+
+                                    <div class="pw-strength-box">
+                                        <div class="pw-strength-top">
+                                            <span>Password Strength</span>
+                                            <span class="pw-strength-text weak" id="textStrengthProfile">Weak</span>
+                                        </div>
+                                        <div class="pw-progress">
+                                            <div class="pw-progress-bar" id="barStrengthProfile"></div>
+                                        </div>
+                                        <div class="pw-rules">
+                                            <div class="pw-rule" data-rule="len"><span class="pw-dot"></span> 8 Chars
+                                            </div>
+                                            <div class="pw-rule" data-rule="upper"><span class="pw-dot"></span> A-Z
+                                            </div>
+                                            <div class="pw-rule" data-rule="lower"><span class="pw-dot"></span> a-z
+                                            </div>
+                                            <div class="pw-rule" data-rule="num"><span class="pw-dot"></span> 123</div>
+                                            <div class="pw-rule" data-rule="spec"><span class="pw-dot"></span> @#$</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold small text-dark">
+                                        <i class="bi bi-shield-check text-success me-1"></i>NHẬP LẠI MẬT KHẨU MỚI ĐỂ XÁC
+                                        NHẬN
+                                    </label>
+                                    <div class="input-group">
+                                        <input type="password" id="inputXacNhanMKMoiProfile"
+                                            name="xac_nhan_mat_khau_moi" class="form-control"
+                                            placeholder="Nhập lại chính xác mật khẩu mạnh ở trên..." required>
+                                        <button class="btn btn-outline-secondary" type="button"
+                                            onclick="batTatMatKhauProfile('inputXacNhanMKMoiProfile', this.querySelector('i'))">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div class="d-flex justify-content-between align-items-center pt-2 border-top">
+                                    <span class="small text-muted">
+                                        <i class="bi bi-info-circle me-1"></i>Phải đạt mức <strong
+                                            class="text-success">Strong (đủ 5 tiêu chí)</strong> mới được phép đổi.
+                                    </span>
+                                    <button type="submit" id="btnLuuMatKhauManh" class="btn btn-dark fw-bold px-4 py-2">
+                                        <i class="bi bi-lock-fill text-warning me-1"></i>Cập Nhật Mật Khẩu Mạnh
+                                    </button>
+                                </div>
+                            </form>
                         </div>
                     </div>
-                    <div class="modal-footer bg-light border-0">
-                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
-                        <button type="submit" name="btn_cap_nhat_ten_khach" class="btn btn-warning btn-sm fw-bold px-3">
-                            <i class="bi bi-check2-circle me-1"></i>Lưu Thay Đổi Tên
-                        </button>
-                    </div>
-                </form>
+                </div>
             </div>
         </div>
     </div>
@@ -785,7 +1391,6 @@ function cheSDTKhach($sdt) {
             <div class="row justify-content-center">
                 <div class="col-lg-10 col-xl-9">
 
-                    <!-- BẮT BUỘC ĐĂNG NHẬP TRƯỚC KHI ĐẶT LỊCH (ĐÃ ẨN HOÀN TOÀN THẺ VIP) -->
                     <?php if (!$da_dang_nhap): ?>
                     <div
                         class="alert alert-danger d-flex flex-column flex-md-row justify-content-between align-items-md-center shadow-sm rounded-3 mb-4 p-3 border-danger">
@@ -803,15 +1408,24 @@ function cheSDTKhach($sdt) {
                         class="alert alert-success d-flex flex-wrap justify-content-between align-items-center shadow-sm rounded-3 mb-4 py-2 px-3 gap-2">
                         <span class="small">
                             <i class="bi bi-person-check-fill me-1"></i>Khách hàng:
-                            <strong><?= htmlspecialchars($_SESSION['ho_ten']) ?></strong> • SĐT & Gmail đã được xác thực
-                            cố định
+                            <strong
+                                class="lbl-ten-khach-hien-thi"><?= htmlspecialchars($thong_tin_user['ho_ten']) ?></strong>
+                            • SĐT & Gmail đã được xác thực cố định
                         </span>
                         <div class="d-flex gap-2">
                             <a href="#bangLichSuGanDaySQL" class="btn btn-dark btn-sm py-0 fw-semibold">
                                 <i class="bi bi-table me-1"></i>Lịch sử đặt gần đây
                             </a>
-                            <button type="button" class="btn btn-outline-success btn-sm py-0" data-bs-toggle="modal"
-                                data-bs-target="#modalThongTinCaNhan">Đổi tên</button>
+                            <button type="button" class="btn btn-outline-success btn-sm py-0 fw-bold"
+                                data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan"
+                                onclick="document.getElementById('tab-info-btn').click();">
+                                <i class="bi bi-person-gear me-1"></i>Hồ sơ
+                            </button>
+                            <button type="button" class="btn btn-warning btn-sm py-0 fw-bold" data-bs-toggle="modal"
+                                data-bs-target="#modalThongTinCaNhan"
+                                onclick="document.getElementById('tab-password-btn').click();">
+                                <i class="bi bi-key-fill me-1"></i>Đổi mật khẩu
+                            </button>
                         </div>
                     </div>
                     <?php endif; ?>
@@ -831,7 +1445,7 @@ function cheSDTKhach($sdt) {
                                     <input type="hidden" name="quan_huyen" id="quanHuyenHidden" value="">
                                 </div>
 
-                                <!-- Hàng 2: Chọn Cơ Sở Salon (Đã ẩn tên thợ cắt tóc trên thẻ Salon) -->
+                                <!-- Hàng 2: Chọn Cơ Sở Salon -->
                                 <div class="mb-4">
                                     <label class="form-label form-label-custom"><i class="bi bi-shop me-2"></i>CHỌN CƠ
                                         SỞ
@@ -850,7 +1464,7 @@ function cheSDTKhach($sdt) {
                                     </div>
                                 </div>
 
-                                <!-- Hàng 3: CHỌN NHIỀU DỊCH VỤ & KỸ THUẬT VIÊN (Ẩn Kỹ thuật viên cho đến khi khách chọn Cơ sở Salon) -->
+                                <!-- Hàng 3: CHỌN NHIỀU DỊCH VỤ & KỸ THUẬT VIÊN -->
                                 <div class="row g-4 mb-3">
                                     <div class="col-md-6" id="cotChonDichVu">
                                         <div class="d-flex justify-content-between align-items-center mb-1">
@@ -897,7 +1511,6 @@ function cheSDTKhach($sdt) {
                                         <div id="khungTheDichVuDaChon" class="mt-2"></div>
                                     </div>
 
-                                    <!-- KHUNG CHỌN THỢ CẮT TÓC: MẶC ĐỊNH ẨN (d-none), CHỈ HIỆN KHI KHÁCH CHỌN 1 TRONG 2 SALON -->
                                     <div class="col-md-6 d-none" id="khungChonKyThuatVien">
                                         <label class="form-label form-label-custom mb-1"><i
                                                 class="bi bi-scissors me-2"></i>KỸ THUẬT VIÊN</label>
@@ -918,7 +1531,6 @@ function cheSDTKhach($sdt) {
                                     </div>
                                 </div>
 
-                                <!-- Khung hiển thị cảnh báo chặn trùng lịch hoặc lịch bận của thợ -->
                                 <div id="khungCanhBaoLichBan" class="alert alert-danger d-none small mb-4"></div>
 
                                 <!-- Hàng 4: Ngày giờ, Họ tên, SĐT & Gmail -->
@@ -941,10 +1553,10 @@ function cheSDTKhach($sdt) {
                                         <label class="form-label form-label-custom mb-1"><i
                                                 class="bi bi-person me-2"></i>HỌ
                                             VÀ TÊN KHÁCH HÀNG (Có thể sửa)</label>
-                                        <input type="text" name="ho_ten"
+                                        <input type="text" id="inputHoTenFormDatLich" name="ho_ten"
                                             class="form-control form-control-lg custom-input fw-semibold"
                                             placeholder="<?= $da_dang_nhap ? 'Tên của bạn' : 'Vui lòng đăng nhập trước...' ?>"
-                                            value="<?= htmlspecialchars($_SESSION['ho_ten'] ?? '') ?>"
+                                            value="<?= htmlspecialchars($thong_tin_user['ho_ten']) ?>"
                                             <?= !$da_dang_nhap ? 'readonly' : '' ?> required>
                                     </div>
                                     <div class="col-md-6">
@@ -953,7 +1565,7 @@ function cheSDTKhach($sdt) {
                                         <input type="tel" name="so_dien_thoai"
                                             class="form-control form-control-lg custom-input input-locked-bold"
                                             placeholder="<?= $da_dang_nhap ? 'Số điện thoại' : 'Đăng nhập để hiển thị SĐT cố định' ?>"
-                                            value="<?= htmlspecialchars($_SESSION['so_dien_thoai'] ?? '') ?>" readonly
+                                            value="<?= htmlspecialchars($thong_tin_user['so_dien_thoai']) ?>" readonly
                                             title="Số điện thoại cố định theo tài khoản, không thể chỉnh sửa" required>
                                     </div>
                                     <div class="col-md-6">
@@ -962,7 +1574,7 @@ function cheSDTKhach($sdt) {
                                         <input type="email" name="email"
                                             class="form-control form-control-lg custom-input input-locked-bold"
                                             placeholder="<?= $da_dang_nhap ? 'Địa chỉ Gmail' : 'Đăng nhập để hiển thị Gmail cố định' ?>"
-                                            value="<?= htmlspecialchars($_SESSION['email'] ?? '') ?>" readonly
+                                            value="<?= htmlspecialchars($thong_tin_user['email']) ?>" readonly
                                             title="Địa chỉ Gmail cố định theo tài khoản, không thể chỉnh sửa" required>
                                     </div>
                                 </div>
@@ -1346,8 +1958,240 @@ function cheSDTKhach($sdt) {
         </div>
     </footer>
 
-    <!-- SCRIPT XỬ LÝ CHẶN TRÙNG LỊCH NGAY LẬP TỨC, ẨN THỢ TRƯỚC KHI CHỌN SALON & KHÓA NGÀY QUÁ KHỨ -->
+    <!-- SCRIPT XỬ LÝ MODAL HỒ SƠ CÁ NHÂN, ĐỔI MẬT KHẨU MẠNH & ĐẶT LỊCH -->
     <script>
+    // =========================================================================
+    // A. LOGIC HỒ SƠ CÁ NHÂN & ĐỔI MẬT KHẨU MẠNH TRONG MODAL AVATAR
+    // =========================================================================
+    function batTatMatKhauProfile(inputId, iconEl) {
+        const inp = document.getElementById(inputId);
+        if (!inp) return;
+        if (inp.type === "password") {
+            inp.type = "text";
+            if (iconEl) {
+                iconEl.classList.remove("bi-eye");
+                iconEl.classList.add("bi-eye-slash");
+            }
+        } else {
+            inp.type = "password";
+            if (iconEl) {
+                iconEl.classList.remove("bi-eye-slash");
+                iconEl.classList.add("bi-eye");
+            }
+        }
+    }
+
+    function chonBieuTuongAvatar(iconName, el) {
+        document.getElementById('inputAvatarIcon').value = iconName;
+        document.querySelectorAll('.avatar-choice-item').forEach(item => item.classList.remove('active'));
+        if (el) el.classList.add('active');
+        const heroPreview = document.getElementById('heroAvatarPreview');
+        if (heroPreview) {
+            heroPreview.innerHTML = `<i class="bi ${iconName}"></i>`;
+        }
+    }
+
+    function danhGiaMatKhauProfile() {
+        const inp = document.getElementById("inputMKMoiProfile");
+        const box = document.getElementById("boxStrengthProfile");
+        const textEl = document.getElementById("textStrengthProfile");
+        const barEl = document.getElementById("barStrengthProfile");
+        if (!inp || !box || !textEl || !barEl) return {
+            score: 0,
+            missing: []
+        };
+
+        const val = inp.value;
+        const rules = {
+            len: val.length >= 8,
+            upper: /[A-Z]/.test(val),
+            lower: /[a-z]/.test(val),
+            num: /[0-9]/.test(val),
+            spec: /[^A-Za-z0-9]/.test(val)
+        };
+        const labels = {
+            len: "tối thiểu 8 ký tự (8 Chars)",
+            upper: "chữ IN HOA (A-Z)",
+            lower: "chữ thường (a-z)",
+            num: "chữ số (123)",
+            spec: "ký tự đặc biệt (@#$)"
+        };
+
+        let score = 0;
+        let missing = [];
+
+        Object.keys(rules).forEach(k => {
+            const rEl = box.querySelector(`.pw-rule[data-rule="${k}"]`);
+            if (rules[k]) {
+                score++;
+                if (rEl) rEl.classList.add("active");
+            } else {
+                missing.push(labels[k]);
+                if (rEl) rEl.classList.remove("active");
+            }
+        });
+
+        const pct = (score / 5) * 100;
+        barEl.style.width = (val.length === 0 ? 0 : Math.max(pct, 15)) + "%";
+
+        if (score <= 2) {
+            textEl.textContent = "Weak";
+            textEl.className = "pw-strength-text weak";
+            barEl.style.backgroundColor = "#ef4444";
+        } else if (score <= 4) {
+            textEl.textContent = "Medium";
+            textEl.className = "pw-strength-text medium";
+            barEl.style.backgroundColor = "#f59e0b";
+        } else {
+            textEl.textContent = "Strong";
+            textEl.className = "pw-strength-text strong";
+            barEl.style.backgroundColor = "#22c55e";
+        }
+
+        return {
+            score,
+            missing
+        };
+    }
+
+    const inpMKProfile = document.getElementById("inputMKMoiProfile");
+    if (inpMKProfile) {
+        inpMKProfile.addEventListener("input", () => {
+            danhGiaMatKhauProfile();
+            const al = document.getElementById("alertProfilePassword");
+            if (al) al.classList.add("d-none");
+        });
+    }
+
+    function luuThongTinCaNhanAjax(e) {
+        if (e) e.preventDefault();
+        const form = document.getElementById("formCapNhatHoSo");
+        const alertEl = document.getElementById("alertProfileInfo");
+        const btn = document.getElementById("btnLuuHoSoAjax");
+
+        const fd = new FormData(form);
+        fd.append("ajax_action", "update_profile_info");
+
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Đang lưu...`;
+
+        fetch("DatLich.php", {
+                method: "POST",
+                body: fd
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="bi bi-check2-circle me-1"></i>Lưu Thông Tin Hồ Sơ`;
+                if (data.status === "success") {
+                    alertEl.className = "alert alert-success small fw-semibold py-2";
+                    alertEl.innerText = data.msg;
+                    alertEl.classList.remove("d-none");
+
+                    // Cập nhật ngay tên & icon trên toàn trang mà không cần reload
+                    document.querySelectorAll(".lbl-ten-khach-hien-thi").forEach(el => {
+                        el.innerText = data.ho_ten_moi;
+                    });
+                    const inpTenBooking = document.getElementById("inputHoTenFormDatLich");
+                    if (inpTenBooking) inpTenBooking.value = data.ho_ten_moi;
+
+                    const deskAvt = document.getElementById("navDesktopAvatarIcon");
+                    if (deskAvt) deskAvt.className = `bi ${data.avatar_icon} fs-6`;
+                    const mobAvt = document.getElementById("navMobileAvatarIcon");
+                    if (mobAvt) mobAvt.className = `bi ${data.avatar_icon}`;
+                } else {
+                    alertEl.className = "alert alert-danger small fw-semibold py-2";
+                    alertEl.innerText = "❌ " + data.msg;
+                    alertEl.classList.remove("d-none");
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="bi bi-check2-circle me-1"></i>Lưu Thông Tin Hồ Sơ`;
+                alertEl.className = "alert alert-danger small fw-semibold py-2";
+                alertEl.innerText = "❌ Lỗi kết nối máy chủ!";
+                alertEl.classList.remove("d-none");
+            });
+
+        return false;
+    }
+
+    function doiMatKhauManhAjax(e) {
+        if (e) e.preventDefault();
+        const alertEl = document.getElementById("alertProfilePassword");
+        const btn = document.getElementById("btnLuuMatKhauManh");
+        const mkCu = document.getElementById("inputMKHienTaiProfile").value.trim();
+        const mkMoi = document.getElementById("inputMKMoiProfile").value;
+        const mkCf = document.getElementById("inputXacNhanMKMoiProfile").value;
+
+        const st = danhGiaMatKhauProfile();
+        if (st.score < 5) {
+            alertEl.className = "alert alert-danger small fw-semibold py-2";
+            alertEl.innerHTML =
+                `❌ <strong>Mật khẩu mới chưa đủ mạnh (Strong)!</strong><br>Vui lòng bổ sung: ${st.missing.join(", ")}.`;
+            alertEl.classList.remove("d-none");
+            document.getElementById("inputMKMoiProfile").focus();
+            return false;
+        }
+
+        if (mkMoi !== mkCf) {
+            alertEl.className = "alert alert-danger small fw-semibold py-2";
+            alertEl.innerText = "❌ Mật khẩu xác nhận nhập lại không trùng khớp!";
+            alertEl.classList.remove("d-none");
+            document.getElementById("inputXacNhanMKMoiProfile").focus();
+            return false;
+        }
+
+        const fd = new FormData();
+        fd.append("ajax_action", "change_strong_password");
+        fd.append("mat_khau_hien_tai", mkCu);
+        fd.append("mat_khau_moi", mkMoi);
+        fd.append("xac_nhan_mat_khau_moi", mkCf);
+
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Đang cập nhật mật khẩu...`;
+
+        fetch("DatLich.php", {
+                method: "POST",
+                body: fd
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="bi bi-lock-fill text-warning me-1"></i>Cập Nhật Mật Khẩu Mạnh`;
+                if (data.status === "success") {
+                    alertEl.className = "alert alert-success small fw-semibold py-2";
+                    alertEl.innerText = data.msg;
+                    alertEl.classList.remove("d-none");
+
+                    document.getElementById("formDoiMatKhauManh").reset();
+                    danhGiaMatKhauProfile();
+
+                    const badgeMK = document.getElementById("badgeCapNhatMK");
+                    if (badgeMK && data.thoi_gian_mk) {
+                        badgeMK.innerHTML =
+                            `<i class="bi bi-shield-lock text-info me-1"></i>Đổi MK gần nhất: <strong>${data.thoi_gian_mk}</strong>`;
+                    }
+                } else {
+                    alertEl.className = "alert alert-danger small fw-semibold py-2";
+                    alertEl.innerText = "❌ " + data.msg;
+                    alertEl.classList.remove("d-none");
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                btn.innerHTML = `<i class="bi bi-lock-fill text-warning me-1"></i>Cập Nhật Mật Khẩu Mạnh`;
+                alertEl.className = "alert alert-danger small fw-semibold py-2";
+                alertEl.innerText = "❌ Lỗi kết nối máy chủ!";
+                alertEl.classList.remove("d-none");
+            });
+
+        return false;
+    }
+
+    // =========================================================================
+    // B. LOGIC CHẶN TRÙNG LỊCH NGAY LẬP TỨC, ẨN THỢ TRƯỚC KHI CHỌN SALON
+    // =========================================================================
     const tinhThanhSelect = document.getElementById('tinhThanh');
     const quanHuyenHidden = document.getElementById('quanHuyenHidden');
     const salonContainer = document.getElementById('salonContainer');
@@ -1363,7 +2207,6 @@ function cheSDTKhach($sdt) {
     let provincesData = [];
     let dangBiTrungLich = false;
 
-    // Phân chia cố định: 2 Cơ sở Salon, mỗi Salon có đúng 2 Nhân viên cắt (Chỉ hiện khi khách chọn Salon)
     const DANH_SACH_THO_THEO_SALON = {
         "TP. Vinh": [{
                 value: "Vừ Xuân Công",
@@ -1385,7 +2228,6 @@ function cheSDTKhach($sdt) {
         ]
     };
 
-    // 1. VÔ HIỆU HÓA TOÀN BỘ NGÀY GIỜ TRƯỚC THỜI ĐIỂM HIỆN TẠI
     function layChuoiNgayGioHienTaiISO() {
         const now = new Date();
         const nam = now.getFullYear();
@@ -1466,11 +2308,11 @@ function cheSDTKhach($sdt) {
             return false;
         }
 
-        // Kiểm tra lại lần cuối xem có bị trùng lịch hay không
         kiemTraTrungLichKhongChoDat();
         if (dangBiTrungLich) {
             alert(
-                '❌ Khung giờ bạn chọn đã có khách đặt trước hoặc trùng lịch bận của thợ! Vui lòng chọn khung giờ khác.');
+                '❌ Khung giờ bạn chọn đã có khách đặt trước hoặc trùng lịch bận của thợ! Vui lòng chọn khung giờ khác.'
+            );
             ngayGioInput.focus();
             return false;
         }
@@ -1491,7 +2333,6 @@ function cheSDTKhach($sdt) {
     tinhThanhSelect.addEventListener('change', function() {
         const provinceName = this.value;
 
-        // Ẩn lại khung chọn thợ khi khách đổi Tỉnh/Thành phố cho đến khi bấm chọn 1 Salon cụ thể
         if (khungChonKyThuatVien) {
             khungChonKyThuatVien.classList.add('d-none');
         }
@@ -1501,7 +2342,6 @@ function cheSDTKhach($sdt) {
         khungCanhBao.classList.add('d-none');
 
         if (provinceName.includes('Nghệ An')) {
-            // Đã ẩn tên thợ cắt tóc trên 2 thẻ Salon, chỉ hiện địa chỉ cơ sở
             salonContainer.innerHTML = `
                     <div class="col-md-6">
                         <label class="salon-card">
@@ -1533,7 +2373,6 @@ function cheSDTKhach($sdt) {
         }
     });
 
-    // 2. CHỈ HIỆN KHUNG KỸ THUẬT VIÊN & 2 THỢ TƯƠNG ỨNG KHI KHÁCH BẤM CHỌN 1 TRONG 2 SALON
     function enableKTV(radioEl) {
         let khuVuc = 'TP. Vinh';
         if (radioEl && quanHuyenHidden) {
@@ -1606,14 +2445,12 @@ function cheSDTKhach($sdt) {
         });
     }
 
-    // 3. KIỂM TRA TRÙNG LỊCH: NẾU TRÙNG GIỜ (< 30 PHÚT) THÌ CHẶN LUÔN KHÔNG CHO ĐẶT GIỜ ĐÓ
     function kiemTraTrungLichKhongChoDat() {
         capNhatMinNgayGioHienTai();
         const ktv = kyThuatVienSelect.value;
         let dtVal = ngayGioInput.value;
         dangBiTrungLich = false;
 
-        // Chặn ngay nếu chọn ngày giờ trước thời điểm hiện tại
         if (dtVal && laThoiGianTrongQuaKhu(dtVal)) {
             const minHienTai = layChuoiNgayGioHienTaiISO();
             khungCanhBao.className = "alert alert-danger fw-bold small mb-4";
@@ -1663,7 +2500,6 @@ function cheSDTKhach($sdt) {
         let [ngayChon, gioChon] = dtVal.split('T');
         let phutChon = doiGioSangPhut(gioChon);
 
-        // Kiểm tra trùng với đơn đặt lịch của khách khác trong vòng 30 phút -> CHẶN KHÔNG CHO ĐẶT GIỜ NÀY LUÔN
         const cacDonTrongNgay = danhSachLichDaDat
             .filter(item => item.ky_thuat_vien === ktv && item.ngay_hen === ngayChon)
             .sort((a, b) => doiGioSangPhut(a.gio_hen) - doiGioSangPhut(b.gio_hen));
@@ -1685,7 +2521,6 @@ function cheSDTKhach($sdt) {
             }
         }
 
-        // Kiểm tra trùng giờ bận cá nhân của thợ
         const biTrungBan = danhSachLichBan.find(item =>
             item.ky_thuat_vien === ktv &&
             item.ngay_ban === ngayChon &&
@@ -1705,7 +2540,6 @@ function cheSDTKhach($sdt) {
             return;
         }
 
-        // Nếu không trùng lịch
         dangBiTrungLich = false;
         khungCanhBao.className = "alert alert-info small mb-4";
         khungCanhBao.innerHTML =

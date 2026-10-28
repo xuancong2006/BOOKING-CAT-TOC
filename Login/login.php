@@ -29,7 +29,7 @@ if (file_exists($file_xldl)) {
     }
 }
 
-// Hàm trả về JSON sạch tuyệt đối (Chống lỗi "Lỗi kết nối Server" trên điện thoại & InfinityFree)
+// Hàm trả về JSON sạch tuyệt đối
 function traVeJsonSach($arr) {
     while (ob_get_level() > 0) {
         ob_end_clean();
@@ -40,6 +40,67 @@ function traVeJsonSach($arr) {
     exit();
 }
 
+// Hàm kiểm tra mật khẩu mạnh chuẩn 5 tiêu chí như trong Video (8 Chars, A-Z, a-z, 123, @#$)
+function kiemTraMatKhauManh($mk) {
+    $loi = array();
+    if (strlen($mk) < 8) {
+        $loi[] = "tối thiểu 8 ký tự (8 Chars)";
+    }
+    if (!preg_match('/[A-Z]/', $mk)) {
+        $loi[] = "chữ cái IN HOA (A-Z)";
+    }
+    if (!preg_match('/[a-z]/', $mk)) {
+        $loi[] = "chữ cái thường (a-z)";
+    }
+    if (!preg_match('/[0-9]/', $mk)) {
+        $loi[] = "chữ số (123)";
+    }
+    if (!preg_match('/[^A-Za-z0-9]/', $mk)) {
+        $loi[] = "ký tự đặc biệt (@#$...)";
+    }
+    if (!empty($loi)) {
+        return array(
+            'hop_le'    => false,
+            'thong_bao' => 'Mật khẩu chưa đủ mạnh! Bắt buộc phải có thêm: ' . implode(', ', $loi) . '.'
+        );
+    }
+    return array('hop_le' => true, 'thong_bao' => 'Mật khẩu mạnh hợp lệ.');
+}
+
+// Hàm tạo ngẫu nhiên 1 mật khẩu đạt chuẩn Mạnh (đầy đủ Hoa, thường, số, ký tự đặc biệt, >= 8 ký tự)
+function taoMatKhauManhNgauNhien() {
+    $hoa  = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+    $thg  = "abcdefghijkmnopqrstuvwxyz";
+    $so   = "23456789";
+    $db   = "@#$%&*!";
+    $mk   = "Cmtc"
+          . $db[mt_rand(0, strlen($db) - 1)]
+          . $so[mt_rand(0, strlen($so) - 1)]
+          . $so[mt_rand(0, strlen($so) - 1)]
+          . $so[mt_rand(0, strlen($so) - 1)]
+          . $hoa[mt_rand(0, strlen($hoa) - 1)]
+          . $thg[mt_rand(0, strlen($thg) - 1)];
+    return $mk;
+}
+
+// Hàm tự động lấy URL chuẩn của trang hiện tại (Chạy đúng 100% trên cả Localhost XAMPP & Hosting InfinityFree/Cloudflare)
+function layUrlHienTaiChuan() {
+    $is_https = false;
+    if (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') {
+        $is_https = true;
+    } elseif (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower($_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https') {
+        $is_https = true;
+    } elseif (!empty($_SERVER['HTTP_CF_VISITOR']) && strpos($_SERVER['HTTP_CF_VISITOR'], 'https') !== false) {
+        $is_https = true;
+    } elseif (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443) {
+        $is_https = true;
+    }
+    $protocol = $is_https ? "https" : "http";
+    $host = $_SERVER['HTTP_HOST'];
+    $script_path = isset($_SERVER['SCRIPT_NAME']) ? $_SERVER['SCRIPT_NAME'] : strtok($_SERVER['REQUEST_URI'], '?');
+    return $protocol . "://" . $host . $script_path;
+}
+
 // Kiểm tra và chuẩn hóa Số điện thoại quốc tế & Việt Nam
 function chuanHoaSoDienThoai($ma_quoc_gia, $sdt_nhap) {
     $ma_quoc_gia = trim($ma_quoc_gia);
@@ -48,7 +109,6 @@ function chuanHoaSoDienThoai($ma_quoc_gia, $sdt_nhap) {
         return array('hop_le' => false, 'sdt_luu' => '', 'thong_bao' => 'Vui lòng nhập số điện thoại!');
     }
 
-    // Nếu là đầu số Việt Nam (+84)
     if ($ma_quoc_gia === '+84' || $ma_quoc_gia === '84') {
         if (strpos($chi_so, '84') === 0 && strlen($chi_so) === 11) {
             $chi_so = '0' . substr($chi_so, 2);
@@ -65,7 +125,6 @@ function chuanHoaSoDienThoai($ma_quoc_gia, $sdt_nhap) {
         return array('hop_le' => true, 'sdt_luu' => $chi_so, 'sdt_hien_thi' => '+84 ' . substr($chi_so, 1));
     }
 
-    // Các quốc gia khác trên thế giới (từ 7 đến 15 chữ số)
     $chi_so_khong_0 = ltrim($chi_so, '0');
     if (strlen($chi_so_khong_0) < 6 || strlen($chi_so_khong_0) > 14) {
         return array(
@@ -78,13 +137,11 @@ function chuanHoaSoDienThoai($ma_quoc_gia, $sdt_nhap) {
     return array('hop_le' => true, 'sdt_luu' => $sdt_quoc_te, 'sdt_hien_thi' => $ma_quoc_gia . ' ' . $chi_so_khong_0);
 }
 
-// Kiểm tra định dạng địa chỉ Gmail hợp lệ
 function laGmailHopLe($email) {
     $email = strtolower(trim($email));
     return (bool)filter_var($email, FILTER_VALIDATE_EMAIL) && strpos($email, '@') !== false;
 }
 
-// Hàm gửi payload tới Google Apps Script Webhook (Timeout ngắn 4s để không treo trên Mobile/Hosting)
 function goiGoogleScriptWebhook($webhook_url, $payload_arr) {
     if (empty($webhook_url)) {
         return false;
@@ -113,7 +170,6 @@ function goiGoogleScriptWebhook($webhook_url, $payload_arr) {
     return false;
 }
 
-// Hàm tạo và gửi mã OTP 6 số về Gmail chính chủ của khách
 function guiMaOTPVeGmailChinhChu($ho_ten, $sdt, $email_nhan, $ma_otp, $webhook_url, $gmail_support) {
     $thoi_gian = date('H:i:s - d/m/Y');
     $tieu_de = "🔐 [CMCT SALON] Mã xác thực OTP đăng ký tài khoản của bạn là: $ma_otp";
@@ -153,7 +209,6 @@ function guiMaOTPVeGmailChinhChu($ho_ten, $sdt, $email_nhan, $ma_otp, $webhook_u
     return array('sent_by_php' => $da_gui, 'payload' => $payload_arr);
 }
 
-// Hàm gửi thư chúc mừng sau khi khách nhập đúng OTP và tạo tài khoản thành công
 function taoVaGuiMailDangKyTaiKhoan($ho_ten, $email_khach, $so_dien_thoai, $webhook_url, $gmail_support) {
     if (empty($email_khach) || strpos($email_khach, '@') === false || empty($webhook_url)) {
         return null;
@@ -190,30 +245,30 @@ function taoVaGuiMailDangKyTaiKhoan($ho_ten, $email_khach, $so_dien_thoai, $webh
     return $payload_arr;
 }
 
-// Hàm gửi mật khẩu mới + Đường link đổi mật khẩu về Gmail khi khách bấm "Quên mật khẩu"
+// Hàm gửi mật khẩu mạnh mới + Đường link đổi mật khẩu về Gmail khi khách bấm "Quên mật khẩu"
 function taoVaGuiMailQuenMatKhau($ho_ten, $email_khach, $mat_khau_moi, $link_doi_mk, $webhook_url, $gmail_support) {
     $thoi_gian = date('H:i:s - d/m/Y');
-    $tieu_de = "🔑 [CMCT SALON] Cấp lại mật khẩu & Đường dẫn đổi mật khẩu mới";
+    $tieu_de = "🔑 [CMCT SALON] Cấp mật khẩu mới & Đường dẫn đổi mật khẩu bảo mật";
     $noi_dung_html = "
     <div style='font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 14px; overflow: hidden;'>
         <div style='background-color: #0b4a4d; color: #e6b96f; padding: 22px; text-align: center; border-bottom: 3px solid #c09e6c;'>
             <h2 style='margin: 0; text-transform: uppercase; font-size: 20px;'>KHÔI PHỤC MẬT KHẨU TÀI KHOẢN</h2>
-            <p style='color: #fff; margin: 5px 0 0; font-size: 13px;'>CMCT Salon - Hỗ Trợ Khách Hàng</p>
+            <p style='color: #fff; margin: 5px 0 0; font-size: 13px;'>CMCT Salon - Hỗ Trợ Bảo Mật Khách Hàng</p>
         </div>
         <div style='padding: 24px; background-color: #fff; color: #333; line-height: 1.65;'>
             <p style='margin-top: 0;'>Xin chào <strong>$ho_ten</strong>,</p>
             <p>Hệ thống <strong>CMCT Salon</strong> vừa nhận được yêu cầu khôi phục mật khẩu cho tài khoản Gmail <strong>$email_khach</strong> lúc $thoi_gian.</p>
             <div style='background: #f0fdf4; border: 2px dashed #198754; border-radius: 12px; padding: 16px; text-align: center; margin: 18px 0;'>
-                <div style='font-size: 13px; color: #555; margin-bottom: 6px;'>Mật khẩu mới hệ thống cấp tự động cho bạn là:</div>
-                <div style='font-size: 26px; font-weight: 800; color: #166534; letter-spacing: 4px;'>$mat_khau_moi</div>
+                <div style='font-size: 13px; color: #555; margin-bottom: 6px;'>Mật khẩu mạnh mới hệ thống cấp tự động cho bạn là:</div>
+                <div style='font-size: 26px; font-weight: 800; color: #166534; letter-spacing: 2px;'>$mat_khau_moi</div>
             </div>
-            <p>Bạn có thể dùng ngay mật khẩu mới ở trên để đăng nhập, hoặc nhấn vào nút bên dưới để tự đặt lại mật khẩu theo ý muốn:</p>
+            <p>Bạn có thể dùng ngay mật khẩu mới ở trên để đăng nhập, hoặc nhấn vào nút bên dưới để tự đặt lại mật khẩu mạnh theo ý muốn (Link có hiệu lực trong 30 phút):</p>
             <div style='text-align: center; margin: 22px 0;'>
-                <a href='$link_doi_mk' style='background-color: #0b4a4d; color: #e6b96f; text-decoration: none; padding: 12px 26px; border-radius: 8px; font-weight: bold; display: inline-block;'>
+                <a href='$link_doi_mk' style='background-color: #0b4a4d; color: #e6b96f; text-decoration: none; padding: 13px 28px; border-radius: 10px; font-weight: bold; display: inline-block;'>
                     🔗 BẤM VÀO ĐÂY ĐỂ ĐỔI MẬT KHẨU MỚI
                 </a>
             </div>
-            <p style='font-size: 12px; color: #777; margin-bottom: 0;'>Đường dẫn trực tiếp: <a href='$link_doi_mk'>$link_doi_mk</a></p>
+            <p style='font-size: 12px; color: #777; margin-bottom: 0; word-break: break-all;'>Đường dẫn trực tiếp: <a href='$link_doi_mk'>$link_doi_mk</a></p>
         </div>
         <div style='background-color: #111; color: #e6b96f; padding: 12px; text-align: center; font-size: 12px;'>
             Email được gửi tự động từ bộ phận hỗ trợ CMCT Salon ($gmail_support).
@@ -231,7 +286,7 @@ function taoVaGuiMailQuenMatKhau($ho_ten, $email_khach, $mat_khau_moi, $link_doi
     return array('sent_by_php' => $da_gui, 'payload' => $payload_arr);
 }
 
-// Khởi tạo bảng tai_khoan nếu chưa có
+// Khởi tạo và nâng cấp bảng tai_khoan tự động
 if ($conn && !$conn->connect_error) {
     $conn->query("CREATE TABLE IF NOT EXISTS `tai_khoan` (
       `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -239,11 +294,22 @@ if ($conn && !$conn->connect_error) {
       `email` varchar(100) NOT NULL UNIQUE,
       `so_dien_thoai` varchar(25) NOT NULL,
       `mat_khau` varchar(255) NOT NULL,
+      `gioi_tinh` varchar(20) DEFAULT 'Nam',
+      `ngay_sinh` date DEFAULT NULL,
+      `dia_chi` varchar(255) DEFAULT NULL,
+      `avatar_icon` varchar(60) DEFAULT 'bi-person-bounding-box',
       `vai_tro` varchar(20) DEFAULT 'khach',
       `trang_thai_duyet` tinyint(1) DEFAULT 1,
+      `cap_nhat_mk_luc` datetime DEFAULT NULL,
       `ngay_tao` timestamp DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (`id`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;");
+
+    $conn->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `gioi_tinh` varchar(20) DEFAULT 'Nam';");
+    $conn->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `ngay_sinh` date DEFAULT NULL;");
+    $conn->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `dia_chi` varchar(255) DEFAULT NULL;");
+    $conn->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `avatar_icon` varchar(60) DEFAULT 'bi-person-bounding-box';");
+    $conn->query("ALTER TABLE `tai_khoan` ADD COLUMN IF NOT EXISTS `cap_nhat_mk_luc` datetime DEFAULT NULL;");
 
     $conn->query("INSERT IGNORE INTO `tai_khoan` (`id`, `ho_ten`, `email`, `so_dien_thoai`, `mat_khau`, `vai_tro`, `trang_thai_duyet`) VALUES
     (1, 'Vừ Xuân Công (Admin)', 'xuanconggaming@gmail.com', '0971714681', '123456', 'admin', 1);");
@@ -260,7 +326,7 @@ if (isset($_GET['logout'])) {
 }
 
 // =========================================================================================
-// 3. XỬ LÝ QUÊN MẬT KHẨU QUA AJAX (CẤP MẬT KHẨU BẤT KỲ + GỬI LINK ĐỔI MẬT KHẨU VỀ GMAIL)
+// 3. XỬ LÝ QUÊN MẬT KHẨU QUA AJAX (CẤP MẬT KHẨU MẠNH MỚI + GỬI LINK ĐỔI MẬT KHẨU VỀ GMAIL)
 // =========================================================================================
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'forgot_password') {
     $email_fp = strtolower(trim($_POST['email_quen_mk'] ?? ''));
@@ -278,23 +344,23 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     $uid_fp   = (int)$user_row['id'];
     $ten_fp   = $user_row['ho_ten'];
 
-    // Cấp 1 mật khẩu mới ngẫu nhiên gồm 6 chữ số dễ nhớ và cập nhật vào CSDL
-    $mat_khau_moi = (string)mt_rand(100000, 999999);
+    // Cấp 1 mật khẩu mới ngẫu nhiên chuẩn MẠNH (đủ chữ Hoa, chữ thường, số, ký tự đặc biệt) và cập nhật vào CSDL
+    $mat_khau_moi = taoMatKhauManhNgauNhien();
     $mk_esc = $conn->real_escape_string($mat_khau_moi);
-    $conn->query("UPDATE tai_khoan SET mat_khau = '$mk_esc' WHERE id = $uid_fp");
+    $now_sql = date('Y-m-d H:i:s');
+    $conn->query("UPDATE tai_khoan SET mat_khau = '$mk_esc', cap_nhat_mk_luc = '$now_sql' WHERE id = $uid_fp");
 
-    // Tạo đường dẫn đổi mật khẩu trực tiếp có chữ ký bảo mật
-    $exp_time = time() + 1800; // 30 phút
-    $sig = substr( hash_hmac('sha256', $email_fp . '|' . $exp_time, 'CMTC_SALON_SECRET_KEY_2026'), 0, 20 );
-    $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? "https" : "http";
-    $current_url = $protocol . "://" . $_SERVER['HTTP_HOST'] . strtok($_SERVER['REQUEST_URI'], '?');
-    $link_doi_mk = $current_url . "?reset_email=" . urlencode($email_fp) . "&exp=" . $exp_time . "&sig=" . $sig;
+    // Tạo đường dẫn đổi mật khẩu trực tiếp có chữ ký bảo mật (tự động nhận diện cả Localhost & Hosting)
+    $exp_time = time() + 1800; // Hiệu lực 30 phút
+    $sig = substr(hash_hmac('sha256', $email_fp . '|' . $exp_time, 'CMTC_SALON_SECRET_KEY_2026'), 0, 20);
+    $base_login_url = layUrlHienTaiChuan();
+    $link_doi_mk = $base_login_url . "?reset_email=" . urlencode($email_fp) . "&exp=" . $exp_time . "&sig=" . $sig;
 
     $kq_fp = taoVaGuiMailQuenMatKhau($ten_fp, $email_fp, $mat_khau_moi, $link_doi_mk, $GOOGLE_SCRIPT_WEBHOOK_URL, $GMAIL_SUPPORT_SALON);
 
     traVeJsonSach(array(
         'status'          => 'success',
-        'msg'             => "✅ Đã gửi mật khẩu mới và đường link đổi mật khẩu về hộp thư Gmail ($email_fp)! Vui lòng kiểm tra Gmail của bạn.",
+        'msg'             => "✅ Đã gửi mật khẩu mới và đường link đổi mật khẩu về hộp thư Gmail ($email_fp)! Vui lòng kiểm tra hộp thư đến hoặc thư rác.",
         'webhook_url'     => $GOOGLE_SCRIPT_WEBHOOK_URL,
         'webhook_payload' => base64_encode(json_encode($kq_fp['payload'], JSON_UNESCAPED_UNICODE))
     ));
@@ -303,40 +369,60 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 // Xử lý khi khách bấm vào đường link đổi mật khẩu từ trong Gmail
 $hien_form_dat_lai_mk = false;
 $email_dang_reset = "";
+$exp_dang_reset   = 0;
+$sig_dang_reset   = "";
+
 if (isset($_GET['reset_email'], $_GET['exp'], $_GET['sig'])) {
     $em_r  = strtolower(trim($_GET['reset_email']));
     $exp_r = (int)$_GET['exp'];
     $sig_r = trim($_GET['sig']);
-    $expected_sig = substr( hash_hmac('sha256', $em_r . '|' . $exp_r, 'CMTC_SALON_SECRET_KEY_2026'), 0, 20 );
+    $expected_sig = substr(hash_hmac('sha256', $em_r . '|' . $exp_r, 'CMTC_SALON_SECRET_KEY_2026'), 0, 20);
     if (time() <= $exp_r && hash_equals($expected_sig, $sig_r)) {
         $hien_form_dat_lai_mk = true;
         $email_dang_reset = $em_r;
+        $exp_dang_reset   = $exp_r;
+        $sig_dang_reset   = $sig_r;
     } else {
         $thong_bao = "❌ Đường dẫn đổi mật khẩu không hợp lệ hoặc đã hết hạn (quá 30 phút)!";
     }
 }
 
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_luu_mk_moi_reset'])) {
-    $em_r  = strtolower(trim($_POST['reset_email'] ?? ''));
-    $exp_r = (int)($_POST['exp'] ?? 0);
-    $sig_r = trim($_POST['sig'] ?? '');
-    $mk_m  = trim($_POST['mat_khau_moi_reset'] ?? '');
-    $expected_sig = substr( hash_hmac('sha256', $em_r . '|' . $exp_r, 'CMTC_SALON_SECRET_KEY_2026'), 0, 20 );
+    $em_r     = strtolower(trim($_POST['reset_email'] ?? ''));
+    $exp_r    = (int)($_POST['exp'] ?? 0);
+    $sig_r    = trim($_POST['sig'] ?? '');
+    $mk_m     = trim($_POST['mat_khau_moi_reset'] ?? '');
+    $mk_m_cf  = trim($_POST['xac_nhan_mk_reset'] ?? '');
+    $expected_sig = substr(hash_hmac('sha256', $em_r . '|' . $exp_r, 'CMTC_SALON_SECRET_KEY_2026'), 0, 20);
 
-    if (time() <= $exp_r && hash_equals($expected_sig, $sig_r) && strlen($mk_m) >= 6) {
-        $em_esc = $conn->real_escape_string($em_r);
-        $mk_esc = $conn->real_escape_string($mk_m);
-        $conn->query("UPDATE tai_khoan SET mat_khau = '$mk_esc' WHERE LOWER(email) = '$em_esc'");
-        $loai_tb = "success";
-        $thong_bao = "✅ Đổi mật khẩu mới thành công! Bây giờ bạn có thể đăng nhập.";
+    if (time() > $exp_r || !hash_equals($expected_sig, $sig_r)) {
+        $thong_bao = "❌ Đường dẫn đổi mật khẩu đã hết hạn (quá 30 phút)! Vui lòng bấm Quên mật khẩu để lấy link mới.";
         $hien_form_dat_lai_mk = false;
     } else {
-        $thong_bao = "❌ Không thể đặt lại mật khẩu (mật khẩu phải từ 6 ký tự trở lên hoặc link đã hết hạn)!";
+        $hien_form_dat_lai_mk = true;
+        $email_dang_reset = $em_r;
+        $exp_dang_reset   = $exp_r;
+        $sig_dang_reset   = $sig_r;
+
+        $check_mk = kiemTraMatKhauManh($mk_m);
+        if (!$check_mk['hop_le']) {
+            $thong_bao = "❌ " . $check_mk['thong_bao'];
+        } elseif ($mk_m !== $mk_m_cf) {
+            $thong_bao = "❌ Mật khẩu xác nhận nhập lại không trùng khớp!";
+        } else {
+            $em_esc  = $conn->real_escape_string($em_r);
+            $mk_esc  = $conn->real_escape_string($mk_m);
+            $now_sql = date('Y-m-d H:i:s');
+            $conn->query("UPDATE tai_khoan SET mat_khau = '$mk_esc', cap_nhat_mk_luc = '$now_sql' WHERE LOWER(email) = '$em_esc'");
+            $loai_tb = "success";
+            $thong_bao = "✅ Đổi mật khẩu mạnh mới thành công! Bây giờ bạn có thể đăng nhập bằng mật khẩu vừa tạo.";
+            $hien_form_dat_lai_mk = false;
+        }
     }
 }
 
 // =========================================================================================
-// 4. BƯỚC 1 ĐĂNG KÝ: ĐIỀN XONG THÔNG TIN -> BẤM ĐĂNG KÝ -> KIỂM TRA & BẬT MÀN HÌNH NHẬP OTP
+// 4. BƯỚC 1 ĐĂNG KÝ: KIỂM TRA MẬT KHẨU MẠNH 5 TIÊU CHÍ & BẬT MÀN HÌNH NHẬP OTP
 // =========================================================================================
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'init_register_otp') {
     $ho_ten_raw   = trim($_POST['ho_ten'] ?? '');
@@ -351,8 +437,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     if (!laGmailHopLe($email_raw)) {
         traVeJsonSach(array('status' => 'error', 'msg' => 'Vui lòng nhập đúng địa chỉ Gmail chính chủ!'));
     }
-    if (strlen($mat_khau_raw) < 6) {
-        traVeJsonSach(array('status' => 'error', 'msg' => 'Mật khẩu phải có tối thiểu 6 ký tự!'));
+
+    // Kiểm tra bắt buộc mật khẩu mạnh (8 Chars, A-Z, a-z, 123, @#$)
+    $check_mk_dk = kiemTraMatKhauManh($mat_khau_raw);
+    if (!$check_mk_dk['hop_le']) {
+        traVeJsonSach(array('status' => 'error', 'msg' => $check_mk_dk['thong_bao']));
     }
 
     $kq_sdt = chuanHoaSoDienThoai($ma_quoc_gia, $sdt_raw);
@@ -361,7 +450,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     }
     $sdt_chuan = $kq_sdt['sdt_luu'];
 
-    // Kiểm tra trùng Gmail hoặc SĐT trong bảng tai_khoan
     $sdt_esc   = $conn->real_escape_string($sdt_chuan);
     $email_esc = $conn->real_escape_string($email_raw);
     $check_sql = "SELECT so_dien_thoai, email FROM tai_khoan WHERE so_dien_thoai = '$sdt_esc' OR LOWER(email) = '$email_esc' LIMIT 1";
@@ -376,7 +464,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         }
     }
 
-    // Tạo mã OTP 6 số và lưu toàn bộ thông tin đăng ký tạm thời vào SESSION
     $ma_otp = str_pad((string)mt_rand(100000, 999999), 6, '0', STR_PAD_LEFT);
     $_SESSION['pending_reg'] = array(
         'ho_ten'        => $ho_ten_raw,
@@ -384,7 +471,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         'so_dien_thoai' => $sdt_chuan,
         'mat_khau'      => $mat_khau_raw,
         'otp_code'      => $ma_otp,
-        'expire'        => time() + 300 // 5 phút
+        'expire'        => time() + 300
     );
 
     $kq_mail = guiMaOTPVeGmailChinhChu($ho_ten_raw, $sdt_chuan, $email_raw, $ma_otp, $GOOGLE_SCRIPT_WEBHOOK_URL, $GMAIL_SUPPORT_SALON);
@@ -400,7 +487,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 }
 
 // =========================================================================================
-// 5. BƯỚC 2 ĐĂNG KÝ: XÁC THỰC MÃ OTP 6 SỐ TỪ MÀN HÌNH ANIMATION (NHƯ VIDEO) & TẠO TÀI KHOẢN
+// 5. BƯỚC 2 ĐĂNG KÝ: XÁC THỰC MÃ OTP 6 SỐ & TẠO TÀI KHOẢN
 // =========================================================================================
 if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] == 'verify_register_otp') {
     $otp_nhap = preg_replace('/[^0-9]/', '', trim($_POST['ma_otp'] ?? ''));
@@ -418,14 +505,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         traVeJsonSach(array('status' => 'error', 'msg' => 'Mã xác thực OTP 6 số không chính xác! Vui lòng kiểm tra lại Gmail.'));
     }
 
-    // Mã OTP chính xác -> Lưu tài khoản vào bảng tai_khoan
     $ho_ten_esc = $conn->real_escape_string($pending['ho_ten']);
     $email_esc  = $conn->real_escape_string($pending['email']);
     $sdt_esc    = $conn->real_escape_string($pending['so_dien_thoai']);
     $mk_esc     = $conn->real_escape_string($pending['mat_khau']);
+    $now_sql    = date('Y-m-d H:i:s');
 
-    $sql_ins = "INSERT INTO tai_khoan (ho_ten, email, so_dien_thoai, mat_khau, vai_tro, trang_thai_duyet) 
-                VALUES ('$ho_ten_esc', '$email_esc', '$sdt_esc', '$mk_esc', 'khach', 1)";
+    $sql_ins = "INSERT INTO tai_khoan (ho_ten, email, so_dien_thoai, mat_khau, vai_tro, trang_thai_duyet, cap_nhat_mk_luc) 
+                VALUES ('$ho_ten_esc', '$email_esc', '$sdt_esc', '$mk_esc', 'khach', 1, '$now_sql')";
 
     if ($conn->query($sql_ins)) {
         $new_uid = $conn->insert_id;
@@ -493,7 +580,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Đăng Nhập & Xác Thực OTP - CMTC Salon</title>
+    <title>Đăng Nhập & Xác Thực Bảo Mật - CMTC Salon</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
@@ -513,11 +600,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
 
     .login-card {
         background: #fff;
-        padding: 38px 34px;
+        padding: 36px 32px;
         border-radius: 24px;
         box-shadow: 0 14px 40px rgba(0, 0, 0, 0.08);
         width: 100%;
-        max-width: 510px;
+        max-width: 520px;
         margin: auto;
         position: relative;
         overflow: visible;
@@ -545,6 +632,166 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
     .nav-pills .nav-link {
         color: #0b4a4d;
         font-weight: 600;
+    }
+
+    /* ======================================================================= */
+    /* BỘ KIỂM TRA ĐỘ MẠNH MẬT KHẨU GIỐNG HỆT VIDEO (CODE BY GAURAV STYLE)     */
+    /* ======================================================================= */
+    .pw-meter-card {
+        background: #ffffff;
+        border: 1px solid #eef2f6;
+        border-radius: 18px;
+        padding: 18px 18px 16px;
+        box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+    }
+
+    .pw-input-box {
+        position: relative;
+        width: 100%;
+    }
+
+    .pw-input-box input {
+        width: 100%;
+        height: 54px;
+        padding: 0 46px 0 18px;
+        border: 2px solid #cbd5e1;
+        border-radius: 14px;
+        font-size: 15px;
+        font-weight: 600;
+        color: #0f172a;
+        background: #fff;
+        outline: none;
+        transition: all 0.3s ease;
+    }
+
+    .pw-input-box label {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #64748b;
+        background: #fff;
+        padding: 0 6px;
+        font-size: 14px;
+        font-weight: 500;
+        pointer-events: none;
+        transition: 0.25s ease;
+    }
+
+    .pw-input-box input:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
+    }
+
+    .pw-input-box input:focus+label,
+    .pw-input-box input:not(:placeholder-shown)+label {
+        top: 0;
+        font-size: 12px;
+        color: #2563eb;
+        font-weight: 700;
+    }
+
+    .pw-eye-btn {
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        font-size: 19px;
+        color: #94a3b8;
+        cursor: pointer;
+        user-select: none;
+        transition: color 0.2s ease;
+    }
+
+    .pw-eye-btn:hover {
+        color: #2563eb;
+    }
+
+    .pw-strength-box {
+        margin-top: 14px;
+    }
+
+    .pw-strength-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        font-size: 13.5px;
+    }
+
+    .pw-strength-top span:first-child {
+        color: #4b5563;
+        font-weight: 600;
+    }
+
+    .pw-strength-text {
+        font-weight: 700;
+        transition: color 0.3s ease;
+    }
+
+    .pw-strength-text.weak {
+        color: #ef4444;
+    }
+
+    .pw-strength-text.medium {
+        color: #f59e0b;
+    }
+
+    .pw-strength-text.strong {
+        color: #22c55e;
+    }
+
+    .pw-progress {
+        width: 100%;
+        height: 8px;
+        background: #e5e7eb;
+        border-radius: 30px;
+        overflow: hidden;
+    }
+
+    .pw-progress-bar {
+        width: 0%;
+        height: 100%;
+        background: #ef4444;
+        border-radius: 30px;
+        transition: width 0.35s ease, background-color 0.35s ease;
+    }
+
+    .pw-rules {
+        margin-top: 14px;
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .pw-rule {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 12.5px;
+        font-weight: 600;
+        color: #9ca3af;
+        transition: color 0.25s ease;
+    }
+
+    .pw-rule .pw-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #d1d5db;
+        display: inline-block;
+        transition: all 0.25s ease;
+    }
+
+    .pw-rule.active {
+        color: #2563eb;
+    }
+
+    .pw-rule.active .pw-dot {
+        background: #2563eb;
+        box-shadow: 0 0 8px rgba(37, 99, 235, 0.55);
+        transform: scale(1.12);
     }
 
     /* ======================================================================= */
@@ -641,7 +888,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
     }
 
     /* ======================================================================= */
-    /* GIAO DIỆN VAULT ACCESS CODE / OTP ANIMATION NHƯ TRONG VIDEO MẪU         */
+    /* GIAO DIỆN VAULT ACCESS CODE / OTP ANIMATION                             */
     /* ======================================================================= */
     .vault-otp-overlay {
         position: fixed;
@@ -669,7 +916,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         transition: all 0.4s cubic-bezier(0.22, 1, 0.36, 1);
     }
 
-    /* Thanh ánh sáng trạng thái phía trên đỉnh Card như trong video */
     .vault-top-bar {
         position: absolute;
         top: 0;
@@ -718,7 +964,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         min-height: 22px;
     }
 
-    /* Sân khấu trung tâm chứa 6 ô số OTP, vòng quay Orbit và quả cầu xanh Access Granted */
     .vault-stage {
         position: relative;
         height: 155px;
@@ -766,7 +1011,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         background: #ffffff;
     }
 
-    /* Hiệu ứng xếp thành vòng tròn xoay (Orbit) rồi thu vào tâm giống hệt video */
     .vault-boxes-wrap.orbiting .vault-otp-digit {
         position: absolute;
         width: 48px;
@@ -823,7 +1067,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         }
     }
 
-    /* Vòng tròn đếm phần trăm Verifying (0% -> 100%) */
     .vault-progress-ring {
         position: absolute;
         width: 96px;
@@ -872,7 +1115,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         color: #4f46e5;
     }
 
-    /* Quả cầu xanh lá cây khi Access Granted */
     .vault-granted-orb {
         position: absolute;
         width: 82px;
@@ -896,7 +1138,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         transform: scale(1);
     }
 
-    /* Hiệu ứng rung lắc khi nhập sai OTP */
     .vault-shake {
         animation: shakeError 0.45s ease;
     }
@@ -970,7 +1211,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                 </div>
                 <div class="modal-body p-4">
                     <p class="small text-muted mb-3">
-                        Nhập địa chỉ Gmail bạn đã đăng ký tài khoản. Hệ thống sẽ <strong>cấp ngay 1 mật khẩu
+                        Nhập địa chỉ Gmail bạn đã đăng ký tài khoản. Hệ thống sẽ <strong>cấp ngay 1 mật khẩu mạnh
                             mới</strong> kèm <strong>đường link đổi mật khẩu</strong> gửi thẳng về hộp thư Gmail của
                         bạn!
                     </p>
@@ -1007,7 +1248,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
             </p>
 
             <div class="vault-stage">
-                <!-- 6 ô nhập OTP tự động nhảy số và xoay tròn như trong video -->
                 <div id="vaultBoxesWrap" class="vault-boxes-wrap">
                     <input type="text" inputmode="numeric" maxlength="1" class="vault-otp-digit" data-index="0" />
                     <input type="text" inputmode="numeric" maxlength="1" class="vault-otp-digit" data-index="1" />
@@ -1017,7 +1257,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                     <input type="text" inputmode="numeric" maxlength="1" class="vault-otp-digit" data-index="5" />
                 </div>
 
-                <!-- Vòng tròn đếm % Verifying -->
                 <div id="vaultProgressRing" class="vault-progress-ring">
                     <svg>
                         <circle class="ring-bg" cx="48" cy="48" r="40"></circle>
@@ -1026,7 +1265,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                     <span id="vaultProgressNum" class="vault-progress-num">0</span>
                 </div>
 
-                <!-- Quả cầu xanh Access Granted -->
                 <div id="vaultGrantedOrb" class="vault-granted-orb">
                     <i class="bi bi-check-lg"></i>
                 </div>
@@ -1052,30 +1290,77 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                 </div>
 
                 <?php if ($hien_form_dat_lai_mk): ?>
-                <!-- GIAO DIỆN ĐẶT LẠI MẬT KHẨU KHI KHÁCH BẤM LINK TRONG GMAIL -->
-                <h4 class="text-center fw-bold text-dark mb-2">Đặt Lại Mật Khẩu Mới</h4>
-                <p class="text-center text-muted small mb-4">
-                    Tài khoản: <strong><?= htmlspecialchars($email_dang_reset) ?></strong>
+                <!-- ========================================================= -->
+                <!-- GIAO DIỆN ĐẶT LẠI MẬT KHẨU MẠNH KHI BẤM LINK TRONG GMAIL  -->
+                <!-- ========================================================= -->
+                <h4 class="text-center fw-bold text-dark mb-1">Tạo Mật Khẩu Mạnh Mới</h4>
+                <p class="text-center text-muted small mb-3">
+                    Tài khoản khôi phục: <strong class="text-dark"><?= htmlspecialchars($email_dang_reset) ?></strong>
                 </p>
-                <form method="POST" action="login.php">
+
+                <?php if ($thong_bao !== ""): ?>
+                <div class="alert alert-<?= $loai_tb ?> text-center fw-semibold small"><?= $thong_bao ?></div>
+                <?php endif; ?>
+
+                <div id="alertResetPwClient" class="alert alert-danger d-none small fw-semibold"></div>
+
+                <form method="POST" action="login.php" onsubmit="return kiemTraFormResetMatKhauManh();">
                     <input type="hidden" name="reset_email" value="<?= htmlspecialchars($email_dang_reset) ?>" />
-                    <input type="hidden" name="exp" value="<?= (int)$_GET['exp'] ?>" />
-                    <input type="hidden" name="sig" value="<?= htmlspecialchars($_GET['sig']) ?>" />
-                    <div class="mb-3">
-                        <label class="form-label fw-semibold small text-dark">Nhập mật khẩu mới của bạn:</label>
-                        <input type="password" name="mat_khau_moi_reset" class="form-control"
-                            placeholder="Tối thiểu 6 ký tự..." minlength="6" required />
+                    <input type="hidden" name="exp" value="<?= (int)$exp_dang_reset ?>" />
+                    <input type="hidden" name="sig" value="<?= htmlspecialchars($sig_dang_reset) ?>" />
+
+                    <!-- Khung Create A Strong Password như trong video -->
+                    <div class="pw-meter-card mb-3" id="boxStrengthReset">
+                        <div class="text-center fw-bold text-dark mb-3" style="font-size: 15px;">
+                            Create A Strong Password
+                        </div>
+                        <div class="pw-input-box">
+                            <input type="password" id="inputMatKhauReset" name="mat_khau_moi_reset" placeholder=" "
+                                autocomplete="new-password" required />
+                            <label for="inputMatKhauReset">Password</label>
+                            <i class="bi bi-eye pw-eye-btn" onclick="batTatHienMatKhau('inputMatKhauReset', this)"></i>
+                        </div>
+
+                        <div class="pw-strength-box">
+                            <div class="pw-strength-top">
+                                <span>Password Strength</span>
+                                <span class="pw-strength-text weak" id="textStrengthReset">Weak</span>
+                            </div>
+                            <div class="pw-progress">
+                                <div class="pw-progress-bar" id="barStrengthReset"></div>
+                            </div>
+                            <div class="pw-rules">
+                                <div class="pw-rule" data-rule="len"><span class="pw-dot"></span> 8 Chars</div>
+                                <div class="pw-rule" data-rule="upper"><span class="pw-dot"></span> A-Z</div>
+                                <div class="pw-rule" data-rule="lower"><span class="pw-dot"></span> a-z</div>
+                                <div class="pw-rule" data-rule="num"><span class="pw-dot"></span> 123</div>
+                                <div class="pw-rule" data-rule="spec"><span class="pw-dot"></span> @#$</div>
+                            </div>
+                        </div>
                     </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small text-dark">Nhập lại mật khẩu mới để xác nhận:</label>
+                        <div class="input-group">
+                            <input type="password" id="inputXacNhanReset" name="xac_nhan_mk_reset" class="form-control"
+                                placeholder="Nhập lại chính xác mật khẩu mạnh ở trên..." required />
+                            <button class="btn btn-outline-secondary" type="button"
+                                onclick="batTatHienMatKhau('inputXacNhanReset', this.querySelector('i'))">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
                     <button type="submit" name="btn_luu_mk_moi_reset" class="btn btn-dark-teal w-100 mb-2">
-                        Lưu Mật Khẩu Mới
+                        <i class="bi bi-shield-check me-2"></i>Lưu Mật Khẩu Mạnh Mới
                     </button>
-                    <a href="login.php" class="btn btn-outline-secondary btn-sm w-100">Quay lại Đăng nhập</a>
+                    <a href="login.php" class="btn btn-outline-secondary btn-sm w-100">Quay lại trang Đăng nhập</a>
                 </form>
 
                 <?php elseif (!isset($_SESSION['user_id'])): ?>
                 <h2 class="text-center fw-bold text-dark mb-2">Hệ Thống CMTC Salon</h2>
                 <p class="text-center text-muted mb-4 small">
-                    Đăng nhập hoặc Điền thông tin Đăng ký để nhận mã xác thực OTP qua Gmail
+                    Đăng nhập hoặc Tạo tài khoản với mật khẩu bảo mật cao & xác thực OTP qua Gmail
                 </p>
 
                 <?php if ($thong_bao !== ""): ?>
@@ -1113,8 +1398,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                                         <i class="bi bi-question-circle me-1"></i>Quên mật khẩu?
                                     </a>
                                 </div>
-                                <input type="password" name="password" class="form-control" placeholder="Nhập mật khẩu"
-                                    required />
+                                <div class="input-group">
+                                    <input type="password" id="loginPasswordInput" name="password" class="form-control"
+                                        placeholder="Nhập mật khẩu" required />
+                                    <button class="btn btn-outline-secondary" type="button"
+                                        onclick="batTatHienMatKhau('loginPasswordInput', this.querySelector('i'))">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
                             </div>
                             <button type="submit" class="btn btn-dark-teal w-100 mb-2">
                                 Đăng Nhập <i class="fa-solid fa-arrow-right ms-2 small"></i>
@@ -1123,23 +1414,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                     </div>
 
                     <!-- ========================================================= -->
-                    <!-- TAB 2: ĐĂNG KÝ MỚI (ĐẦU SỐ QUỐC TẾ + BẤM ĐK MỚI HIỆN OTP) -->
+                    <!-- TAB 2: ĐĂNG KÝ MỚI (TÍCH HỢP MẬT KHẨU MẠNH NHƯ VIDEO)     -->
                     <!-- ========================================================= -->
                     <div class="tab-pane fade <?= $mo_tab_dang_ky ? 'show active' : '' ?>" id="tabRegister">
+                        <div id="alertLoiDangKy" class="alert alert-danger d-none small fw-semibold py-2"></div>
+
                         <form id="formDangKyMoi" onsubmit="return batDauDangKyVaHienOTP(event);">
                             <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted small">Họ và Tên khách hàng</label>
+                                <label class="form-label fw-semibold text-muted small">Họ và Tên</label>
                                 <input type="text" id="regHoTen" name="ho_ten" class="form-control"
                                     placeholder="VD: Nguyễn Văn A" required />
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label fw-semibold text-muted small">Địa chỉ Gmail chính chủ</label>
+                                <label class="form-label fw-semibold text-muted small">Địa chỉ Gmail</label>
                                 <input type="email" id="regEmail" name="email" class="form-control"
                                     placeholder="VD: khachhang@gmail.com" required />
                             </div>
 
-                            <!-- SỐ ĐIỆN THOẠI KÈM BỘ CHỌN ĐẦU SỐ CÁC NƯỚC TRÊN THẾ GIỚI & TÌM KIẾM NHANH -->
+                            <!-- SỐ ĐIỆN THOẠI KÈM BỘ CHỌN ĐẦU SỐ CÁC NƯỚC -->
                             <div class="mb-3 country-code-wrapper" id="countryCodeWrapper">
                                 <label class="form-label fw-semibold text-muted small">
                                     Số điện thoại chính chủ (Chọn mã quốc gia)
@@ -1156,7 +1449,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                                         oninput="this.value = this.value.replace(/[^0-9]/g, '');" required />
                                 </div>
 
-                                <!-- Menu xổ xuống kèm ô tìm kiếm nhanh các nước trên thế giới -->
                                 <div id="menuQuocGia" class="country-dropdown-menu">
                                     <div class="input-group input-group-sm">
                                         <span class="input-group-text bg-light border-end-0">
@@ -1170,10 +1462,40 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                                 </div>
                             </div>
 
+                            <!-- BỘ KIỂM TRA ĐỘ MẠNH MẬT KHẨU GIỐNG HỆT VIDEO -->
                             <div class="mb-4">
-                                <label class="form-label fw-semibold text-muted small">Mật khẩu</label>
-                                <input type="password" id="regMatKhau" name="mat_khau" class="form-control"
-                                    placeholder="Tạo mật khẩu (tối thiểu 6 ký tự)..." minlength="6" required />
+                                <label class="form-label fw-semibold text-muted small mb-1">
+                                    Tạo Mật Khẩu Mạnh (Đủ chữ hoa, chữ thường, số & ký tự đặc biệt)
+                                </label>
+                                <div class="pw-meter-card" id="boxStrengthReg">
+                                    <div class="pw-input-box">
+                                        <input type="password" id="regMatKhau" name="mat_khau" placeholder=" "
+                                            autocomplete="new-password" required />
+                                        <label for="regMatKhau">Password</label>
+                                        <i class="bi bi-eye pw-eye-btn"
+                                            onclick="batTatHienMatKhau('regMatKhau', this)"></i>
+                                    </div>
+
+                                    <div class="pw-strength-box">
+                                        <div class="pw-strength-top">
+                                            <span>Password Strength</span>
+                                            <span class="pw-strength-text weak" id="textStrengthReg">Weak</span>
+                                        </div>
+                                        <div class="pw-progress">
+                                            <div class="pw-progress-bar" id="barStrengthReg"></div>
+                                        </div>
+                                        <div class="pw-rules">
+                                            <div class="pw-rule" data-rule="len"><span class="pw-dot"></span> 8 Chars
+                                            </div>
+                                            <div class="pw-rule" data-rule="upper"><span class="pw-dot"></span> A-Z
+                                            </div>
+                                            <div class="pw-rule" data-rule="lower"><span class="pw-dot"></span> a-z
+                                            </div>
+                                            <div class="pw-rule" data-rule="num"><span class="pw-dot"></span> 123</div>
+                                            <div class="pw-rule" data-rule="spec"><span class="pw-dot"></span> @#$</div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
 
                             <button type="submit" id="btnSubmitDangKy" class="btn btn-dark-teal w-100">
@@ -1198,6 +1520,137 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+    // =========================================================================
+    // 0. LOGIC KIỂM TRA SỨC MẠNH MẬT KHẨU GIỐNG HỆT VIDEO (8 Chars, A-Z, a-z, 123, @#$)
+    // =========================================================================
+    function batTatHienMatKhau(inputId, iconEl) {
+        const inp = document.getElementById(inputId);
+        if (!inp) return;
+        if (inp.type === "password") {
+            inp.type = "text";
+            if (iconEl) {
+                iconEl.classList.remove("bi-eye");
+                iconEl.classList.add("bi-eye-slash");
+            }
+        } else {
+            inp.type = "password";
+            if (iconEl) {
+                iconEl.classList.remove("bi-eye-slash");
+                iconEl.classList.add("bi-eye");
+            }
+        }
+    }
+
+    function danhGiaChiTietMatKhau(val) {
+        return {
+            len: val.length >= 8,
+            upper: /[A-Z]/.test(val),
+            lower: /[a-z]/.test(val),
+            num: /[0-9]/.test(val),
+            spec: /[^A-Za-z0-9]/.test(val)
+        };
+    }
+
+    function capNhatGiaoDienDoManh(inputId, containerId, textId, barId) {
+        const inp = document.getElementById(inputId);
+        const box = document.getElementById(containerId);
+        const textEl = document.getElementById(textId);
+        const barEl = document.getElementById(barId);
+        if (!inp || !box || !textEl || !barEl) return {
+            score: 0,
+            missing: []
+        };
+
+        const val = inp.value;
+        const kq = danhGiaChiTietMatKhau(val);
+        let score = 0;
+        let missing = [];
+
+        const mapLabel = {
+            len: "tối thiểu 8 ký tự (8 Chars)",
+            upper: "chữ IN HOA (A-Z)",
+            lower: "chữ thường (a-z)",
+            num: "chữ số (123)",
+            spec: "ký tự đặc biệt (@#$)"
+        };
+
+        Object.keys(kq).forEach(key => {
+            const ruleEl = box.querySelector(`.pw-rule[data-rule="${key}"]`);
+            if (kq[key]) {
+                score++;
+                if (ruleEl) ruleEl.classList.add("active");
+            } else {
+                missing.push(mapLabel[key]);
+                if (ruleEl) ruleEl.classList.remove("active");
+            }
+        });
+
+        const percent = (score / 5) * 100;
+        barEl.style.width = (val.length === 0 ? 0 : Math.max(percent, 15)) + "%";
+
+        if (score <= 2) {
+            textEl.textContent = "Weak";
+            textEl.className = "pw-strength-text weak";
+            barEl.style.backgroundColor = "#ef4444";
+        } else if (score <= 4) {
+            textEl.textContent = "Medium";
+            textEl.className = "pw-strength-text medium";
+            barEl.style.backgroundColor = "#f59e0b";
+        } else {
+            textEl.textContent = "Strong";
+            textEl.className = "pw-strength-text strong";
+            barEl.style.backgroundColor = "#22c55e";
+        }
+
+        return {
+            score,
+            missing
+        };
+    }
+
+    // Khởi tạo lắng nghe sự kiện gõ phím cho ô mật khẩu Đăng ký & Đặt lại mật khẩu
+    const inpRegMK = document.getElementById("regMatKhau");
+    if (inpRegMK) {
+        inpRegMK.addEventListener("input", () => {
+            capNhatGiaoDienDoManh("regMatKhau", "boxStrengthReg", "textStrengthReg", "barStrengthReg");
+            const alertEl = document.getElementById("alertLoiDangKy");
+            if (alertEl) alertEl.classList.add("d-none");
+        });
+    }
+
+    const inpResetMK = document.getElementById("inputMatKhauReset");
+    if (inpResetMK) {
+        inpResetMK.addEventListener("input", () => {
+            capNhatGiaoDienDoManh("inputMatKhauReset", "boxStrengthReset", "textStrengthReset",
+                "barStrengthReset");
+            const alertReset = document.getElementById("alertResetPwClient");
+            if (alertReset) alertReset.classList.add("d-none");
+        });
+    }
+
+    function kiemTraFormResetMatKhauManh() {
+        const st = capNhatGiaoDienDoManh("inputMatKhauReset", "boxStrengthReset", "textStrengthReset",
+            "barStrengthReset");
+        const alertReset = document.getElementById("alertResetPwClient");
+        const mk1 = document.getElementById("inputMatKhauReset").value;
+        const mk2 = document.getElementById("inputXacNhanReset").value;
+
+        if (st.score < 5) {
+            alertReset.innerHTML =
+                `❌ <strong>Mật khẩu chưa đủ mạnh!</strong> Vui lòng bổ sung: ${st.missing.join(", ")}.`;
+            alertReset.classList.remove("d-none");
+            document.getElementById("inputMatKhauReset").focus();
+            return false;
+        }
+        if (mk1 !== mk2) {
+            alertReset.innerHTML = `❌ Mật khẩu xác nhận nhập lại không khớp!`;
+            alertReset.classList.remove("d-none");
+            document.getElementById("inputXacNhanReset").focus();
+            return false;
+        }
+        return true;
+    }
+
     // =========================================================================
     // 1. DANH SÁCH ĐẦU SỐ ĐIỆN THOẠI CÁC NƯỚC TRÊN THẾ GIỚI & TÌM KIẾM NHANH
     // =========================================================================
@@ -1385,86 +1838,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
             flag: "🇨🇿",
             name: "Cộng hòa Séc (Czechia)",
             code: "+420"
-        },
-        {
-            flag: "🇭🇺",
-            name: "Hungary",
-            code: "+36"
-        },
-        {
-            flag: "🇦🇹",
-            name: "Áo (Austria)",
-            code: "+43"
-        },
-        {
-            flag: "🇺🇦",
-            name: "Ukraina (Ukraine)",
-            code: "+380"
-        },
-        {
-            flag: "🇹🇷",
-            name: "Thổ Nhĩ Kỳ (Turkey)",
-            code: "+90"
-        },
-        {
-            flag: "🇦🇪",
-            name: "UAE (Dubai)",
-            code: "+971"
-        },
-        {
-            flag: "🇸🇦",
-            name: "Ả Rập Xê Út (Saudi Arabia)",
-            code: "+966"
-        },
-        {
-            flag: "🇶🇦",
-            name: "Qatar",
-            code: "+974"
-        },
-        {
-            flag: "🇮🇱",
-            name: "Israel",
-            code: "+972"
-        },
-        {
-            flag: "🇧🇷",
-            name: "Brazil",
-            code: "+55"
-        },
-        {
-            flag: "🇦🇷",
-            name: "Argentina",
-            code: "+54"
-        },
-        {
-            flag: "🇲🇽",
-            name: "Mexico",
-            code: "+52"
-        },
-        {
-            flag: "🇨🇱",
-            name: "Chile",
-            code: "+56"
-        },
-        {
-            flag: "🇨🇴",
-            name: "Colombia",
-            code: "+57"
-        },
-        {
-            flag: "🇿🇦",
-            name: "Nam Phi (South Africa)",
-            code: "+27"
-        },
-        {
-            flag: "🇪🇬",
-            name: "Ai Cập (Egypt)",
-            code: "+20"
-        },
-        {
-            flag: "🇳🇬",
-            name: "Nigeria",
-            code: "+234"
         }
     ];
 
@@ -1524,7 +1897,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         sdtInput.focus();
     }
 
-    // Đóng menu chọn quốc gia khi bấm ra ngoài
     document.addEventListener('click', function(e) {
         const wrapper = document.getElementById('countryCodeWrapper');
         const menu = document.getElementById('menuQuocGia');
@@ -1535,7 +1907,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
 
     hienThiDanhSachQuocGia('');
 
-    // Hàm gửi ngầm Webhook qua trình duyệt để đảm bảo 100% Gmail nhận được trên cả Mobile & Hosting
     function banWebhookNgam(webhookUrl, base64Payload) {
         if (!webhookUrl || !base64Payload) return;
         try {
@@ -1568,7 +1939,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         }
 
         btn.disabled = true;
-        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Đang gửi mật khẩu mới về Gmail...`;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>Đang gửi mật khẩu mới & link...`;
         alertEl.classList.add('d-none');
 
         const fd = new FormData();
@@ -1606,7 +1977,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
     }
 
     // =========================================================================
-    // 3. ĐIỀN THÔNG TIN XONG -> BẤM ĐĂNG KÝ -> HIỆN MÀN HÌNH NHẬP OTP NHƯ VIDEO
+    // 3. ĐIỀN THÔNG TIN XONG -> KIỂM TRA MẬT KHẨU MẠNH -> HIỆN MÀN HÌNH NHẬP OTP
     // =========================================================================
     const otpDigits = Array.from(document.querySelectorAll('.vault-otp-digit'));
     let dangXacThucOTP = false;
@@ -1621,12 +1992,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         const sdt = document.getElementById('regSoDienThoai').value.trim();
         const matKhau = document.getElementById('regMatKhau').value;
         const btnSubmit = document.getElementById('btnSubmitDangKy');
+        const alertLoi = document.getElementById('alertLoiDangKy');
 
         if (!hoTen || !email || !sdt || !matKhau) {
-            alert('Vui lòng điền đầy đủ thông tin trước khi bấm Đăng ký!');
+            alertLoi.innerHTML = '⚠️ Vui lòng điền đầy đủ thông tin trước khi bấm Đăng ký!';
+            alertLoi.classList.remove('d-none');
             return false;
         }
 
+        // Bắt buộc mật khẩu đạt đủ 5/5 tiêu chí Strong như trong video mới cho phép đăng ký
+        const danhGiaMK = capNhatGiaoDienDoManh("regMatKhau", "boxStrengthReg", "textStrengthReg", "barStrengthReg");
+        if (danhGiaMK.score < 5) {
+            alertLoi.innerHTML =
+                `❌ <strong>Mật khẩu chưa đủ mạnh (mức Strong)!</strong><br>Cần bổ sung thêm: ${danhGiaMK.missing.join(", ")}.`;
+            alertLoi.classList.remove('d-none');
+            document.getElementById('regMatKhau').focus();
+            return false;
+        }
+
+        alertLoi.classList.add('d-none');
         btnSubmit.disabled = true;
         btnSubmit.innerHTML =
             `<span class="spinner-border spinner-border-sm me-2"></span>Đang kiểm tra & gửi mã OTP về Gmail...`;
@@ -1649,7 +2033,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                 btnSubmit.innerHTML = `<i class="fa-solid fa-user-plus me-2"></i>Đăng Ký Tài Khoản`;
 
                 if (data.status === 'error') {
-                    alert('❌ ' + data.msg);
+                    alertLoi.innerHTML = '❌ ' + data.msg;
+                    alertLoi.classList.remove('d-none');
                 } else {
                     if (data.webhook_url && data.webhook_payload) {
                         banWebhookNgam(data.webhook_url, data.webhook_payload);
@@ -1660,7 +2045,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
             .catch(() => {
                 btnSubmit.disabled = false;
                 btnSubmit.innerHTML = `<i class="fa-solid fa-user-plus me-2"></i>Đăng Ký Tài Khoản`;
-                alert('❌ Lỗi kết nối máy chủ! Vui lòng kiểm tra mạng và thử lại.');
+                alertLoi.innerHTML = '❌ Lỗi kết nối máy chủ! Vui lòng kiểm tra mạng và thử lại.';
+                alertLoi.classList.remove('d-none');
             });
 
         return false;
@@ -1729,7 +2115,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         batDauDangKyVaHienOTP(null);
     }
 
-    // Xử lý sự kiện gõ phím, xóa lùi và dán 6 số trên 6 ô OTP
     otpDigits.forEach((input, idx) => {
         input.addEventListener('input', (e) => {
             const val = e.target.value.replace(/[^0-9]/g, '');
@@ -1790,13 +2175,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         const progRing = document.getElementById('vaultProgressRing');
         const ringMeter = document.getElementById('vaultRingMeter');
         const progNum = document.getElementById('vaultProgressNum');
-        const orb = document.getElementById('vaultGrantedOrb');
 
-        // BƯỚC 1: 6 ô số tách ra xếp thành vòng tròn như trong video (0.45s)
         boxesWrap.classList.add('orbiting');
 
         setTimeout(() => {
-            // BƯỚC 2: Xoay tròn thu vào tâm và hiện vòng tròn đếm % Verifying...
             boxesWrap.classList.add('spinning');
             card.className = 'vault-card state-verifying';
             title.innerText = 'Verifying...';
@@ -1807,7 +2189,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                 let pct = 0;
                 const circumference = 251.2;
 
-                // Gọi AJAX kiểm tra mã OTP song song với hiệu ứng đếm %
                 const fd = new FormData();
                 fd.append('action', 'verify_register_otp');
                 fd.append('ma_otp', code);
@@ -1860,7 +2241,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
             if (res.webhook_url && res.webhook_payload) {
                 banWebhookNgam(res.webhook_url, res.webhook_payload);
             }
-            // BƯỚC 3: HIỆN QUẢ CẦU XANH ACCESS GRANTED NHƯ TRONG VIDEO
             card.className = 'vault-card state-granted';
             title.innerText = 'Access Granted';
             subtitle.innerText = 'Welcome! Redirecting to booking...';
@@ -1870,7 +2250,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                 window.location.href = res.redirect || '../DatLich/DatLich.php';
             }, 1250);
         } else {
-            // Nếu sai mã OTP -> Báo đỏ, lắc nhẹ và trả lại 6 ô để khách nhập lại
             card.className = 'vault-card state-denied vault-shake';
             title.innerText = 'Access Denied';
             subtitle.innerHTML =
