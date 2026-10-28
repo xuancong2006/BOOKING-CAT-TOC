@@ -847,8 +847,8 @@
                                 href="tel:0971714681"
                                 class="text-warning fw-bold text-decoration-none">0971.714.681</a></span>
                         <span class="d-block"><i class="bi bi-envelope-fill text-info me-2"></i>Email: <a
-                                href="mailto:xuanconggaming@gmail.com"
-                                class="text-light text-decoration-none">xuanconggaming@gmail.com</a></span>
+                                href="mailto:xuancongsupport@gmail.com"
+                                class="text-light text-decoration-none">xuancongsupport@gmail.com</a></span>
                     </div>
                 </div>
 
