@@ -1,20 +1,23 @@
+<?php
+session_start();
+date_default_timezone_set('Asia/Ho_Chi_Minh');
+?>
 <!DOCTYPE html>
 <html lang="vi">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thông Tin - CMTC Salon</title>
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Thông Tin & Liên Hệ - CMTC Salon</title>
 
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <link href="ThongTin.css?v=2.0" rel="stylesheet">
 
-    <link href="ThongTin.css" rel="stylesheet">
     <!-- ==================== CẤU HÌNH WEB APP (PWA) CHO IPHONE & ANDROID ==================== -->
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="CMTC Salon">
     <meta name="application-name" content="CMTC Salon">
@@ -72,10 +75,8 @@
     <!-- ===================================================================================== -->
 </head>
 
-<body class="d-flex flex-column min-vh-100 bg-light">
+<body class="d-flex flex-column min-vh-100 thong-tin-page">
 
-    <!-- THANH MENU ĐIỀU HƯỚNG -->
-    <!-- THANH MENU ĐIỀU HƯỚNG ĐỒNG BỘ TẤT CẢ CÁC TRANG -->
     <!-- ========================================================================= -->
     <!-- CSS THANH MENU & FOOTER CHUYÊN NGHIỆP ĐA THIẾT BỊ (PC 16:9 & MOBILE 9:16) -->
     <!-- ========================================================================= -->
@@ -338,7 +339,6 @@
     @media (max-width: 991.98px) {
         body {
             padding-bottom: 66px;
-            /* Tránh thanh bottom bar che nội dung dưới cùng trên điện thoại */
         }
     }
     </style>
@@ -346,7 +346,6 @@
     <!-- THANH NAVBAR CHÍNH -->
     <nav class="navbar navbar-expand-lg navbar-dark sticky-top cmtc-navbar">
         <div class="container">
-            <!-- Logo & Tên Thương Hiệu -->
             <a class="cmtc-brand-wrap" href="../TrangChu/index.php">
                 <div class="cmtc-brand-logo-circle">
                     <img src="../images/logo.png"
@@ -358,7 +357,6 @@
                 </div>
             </a>
 
-            <!-- Nút Mở Menu Trên Điện Thoại (Mở Offcanvas mượt mà) -->
             <div class="d-flex align-items-center gap-2 d-lg-none">
                 <?php if (isset($_SESSION['user_id'])): ?>
                 <a class="btn-nav-user py-1 px-2" href="#" data-bs-toggle="modal" data-bs-target="#modalThongTinCaNhan">
@@ -373,7 +371,6 @@
                 </button>
             </div>
 
-            <!-- Menu Trên Máy Tính (Desktop >= 992px) -->
             <div class="collapse navbar-collapse d-none d-lg-flex" id="menuChinh">
                 <ul class="navbar-nav mx-auto mb-2 mb-lg-0 gap-1">
                     <li class="nav-item">
@@ -403,7 +400,6 @@
                     </li>
                 </ul>
 
-                <!-- Cụm Nút Phải Trên Desktop -->
                 <div class="d-flex align-items-center gap-2">
                     <a href="../DatLich/DatLich.php" class="btn-nav-booking">
                         <i class="bi bi-calendar-plus-fill"></i>Đặt Lịch Ngay
@@ -532,7 +528,7 @@
     </div>
 
     <?php if (isset($_SESSION['user_id'])): ?>
-    <!-- MODAL THÔNG TIN TÀI KHOẢN CÁ NHÂN (CHỈ CHO SỬA TÊN, KHÓA EMAIL & SĐT IN ĐẬM) -->
+    <!-- MODAL THÔNG TIN TÀI KHOẢN CÁ NHÂN -->
     <div class="modal fade" id="modalThongTinCaNhan" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content border-0 shadow-lg rounded-4">
@@ -541,7 +537,7 @@
                     </h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <form method="POST" action="">
+                <form method="POST" action="../DatLich/DatLich.php">
                     <div class="modal-body p-4">
                         <div class="mb-3">
                             <label class="form-label fw-bold small text-dark"><i class="bi bi-person me-1"></i>HỌ VÀ TÊN
@@ -587,11 +583,17 @@
     </div>
     <?php endif; ?>
 
-    <!-- BANNER TIÊU ĐỀ -->
-    <header class="bg-primary text-white text-center py-5">
-        <div class="container">
-            <h1 class="display-5 fw-bold">Về CMTC Salon</h1>
-            <p class="lead mb-0">Nơi định hình phong cách phái mạnh</p>
+    <!-- BANNER TIÊU ĐỀ ĐỒNG BỘ MÀU MENU & FOOTER (DARK GOLD & EMERALD TEAL) -->
+    <header class="thongtin-hero-banner text-white text-center">
+        <div class="container position-relative z-1">
+            <div class="thongtin-hero-badge">
+                <i class="bi bi-stars text-warning"></i> Gentleman Hair Studio • Nghệ An
+            </div>
+            <h1 class="display-4 thongtin-hero-title mb-3">Về CMTC Salon</h1>
+            <p class="lead text-light opacity-75 mb-0 mx-auto" style="max-width: 680px;">
+                Nơi định hình phong cách phái mạnh — Sự giao thoa giữa nghệ thuật tạo mẫu tóc hiện đại và không gian thư
+                giãn đẳng cấp
+            </p>
         </div>
     </header>
 
@@ -599,88 +601,185 @@
     <section class="py-5 flex-grow-1">
         <div class="container">
 
-            <!-- Phần 1: Giới thiệu chung -->
-            <div class="row align-items-center mb-5 pb-4 border-bottom">
-                <div class="col-md-6 mb-4 mb-md-0">
-                    <!-- Bạn cần lưu 1 tấm ảnh không gian tiệm tóc vào thư mục images với tên khong-gian.jpg -->
-                    <img src="../images/khonggian.png" class="img-fluid rounded-4 shadow w-100"
-                        style="max-height: 400px; object-fit: cover;" alt="Không gian CMTC Salon">
-                </div>
-                <div class="col-md-6 ps-md-5">
-                    <h2 class="fw-bold mb-4 text-uppercase">Câu Chuyện Của Chúng Tôi</h2>
-                    <p class="text-muted fs-5">
-                        Được thành lập bởi đội ngũ Nhóm 03 đầy nhiệt huyết, <strong>CMTC Salon</strong> không chỉ là một
-                        tiệm cắt tóc đơn thuần. Chúng tôi xây dựng một không gian thư giãn, nơi những người thợ lành
-                        nghề và tận tâm nhất mang đến cho bạn sự tự tin qua từng đường kéo.
-                    </p>
-                    <p class="text-muted fs-5">
-                        Sự kết hợp giữa nghệ thuật tạo kiểu hiện đại và dịch vụ gội đầu thư giãn chuẩn mực chính là lời
-                        cam kết chất lượng mà CMTC gửi gắm đến từng khách hàng.
-                    </p>
-                </div>
-            </div>
-
-            <!-- Phần 2: Giá trị cốt lõi -->
-            <div class="row text-center mb-5 pb-4 border-bottom g-4">
-                <h3 class="fw-bold mb-4 w-100 text-uppercase">Giá Trị Cốt Lõi</h3>
-
-                <div class="col-md-4">
-                    <div class="card h-100 border-0 bg-transparent gia-tri-card">
-                        <div class="card-body">
-                            <i class="bi bi-scissors display-4 text-primary mb-3"></i>
-                            <h4 class="fw-bold">Chuyên Nghiệp</h4>
-                            <p class="text-muted">Đội ngũ thợ Master và Hair Artist được đào tạo bài bản, liên tục cập
-                                nhật xu hướng.</p>
+            <!-- Phần 1: Giới thiệu chung (Khung viền vàng kim & Ngọc lục bảo) -->
+            <div class="story-card-wrap mb-5">
+                <div class="row align-items-center g-4">
+                    <div class="col-lg-6">
+                        <div class="story-image-frame">
+                            <img src="../images/khonggian.png"
+                                onerror="this.src='../images/Gemini_Generated_Image_vn6539vn6539vn65.png'"
+                                alt="Không gian CMTC Salon">
                         </div>
                     </div>
-                </div>
+                    <div class="col-lg-6 ps-lg-4">
+                        <span class="section-badge-colorful">
+                            <i class="bi bi-award-fill me-1"></i>Câu Chuyện Thương Hiệu
+                        </span>
+                        <h2 class="heading-gold-gradient mb-3 text-uppercase">Câu Chuyện Của Chúng Tôi</h2>
+                        <p class="text-secondary fs-6 lh-lg">
+                            Được thành lập bởi đội ngũ <strong>Nhóm 03 (Khoa CNTT - Trường Đại học Nghệ An)</strong> đầy
+                            nhiệt huyết, <strong>CMTC Salon</strong> không chỉ là một tiệm cắt tóc đơn thuần. Chúng tôi
+                            xây dựng một không gian thư giãn sang trọng, nơi những người thợ lành nghề và tận tâm nhất
+                            mang đến cho bạn sự tự tin qua từng đường kéo.
+                        </p>
+                        <p class="text-secondary fs-6 lh-lg mb-4">
+                            Sự kết hợp giữa nghệ thuật tạo kiểu hiện đại và dịch vụ gội đầu dưỡng sinh chuẩn mực tại cả
+                            2 chi nhánh (<strong>TP. Vinh</strong> và <strong>Kỳ Sơn</strong>) chính là lời cam kết chất
+                            lượng mà CMTC gửi gắm đến từng khách hàng.
+                        </p>
 
-                <div class="col-md-4">
-                    <div class="card h-100 border-0 bg-transparent gia-tri-card">
-                        <div class="card-body">
-                            <i class="bi bi-gem display-4 text-primary mb-3"></i>
-                            <h4 class="fw-bold">Chất Lượng</h4>
-                            <p class="text-muted">Sử dụng 100% các sản phẩm tạo kiểu, uốn nhuộm và chăm sóc tóc chính
-                                hãng cao cấp.</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-md-4">
-                    <div class="card h-100 border-0 bg-transparent gia-tri-card">
-                        <div class="card-body">
-                            <i class="bi bi-cup-hot display-4 text-primary mb-3"></i>
-                            <h4 class="fw-bold">Thư Giãn</h4>
-                            <p class="text-muted">Không gian sang trọng, âm nhạc nhẹ nhàng cùng dịch vụ massage đánh bay
-                                mệt mỏi.</p>
+                        <!-- 3 Thẻ số liệu nổi bật -->
+                        <div class="row g-2">
+                            <div class="col-4">
+                                <div class="stat-mini-box">
+                                    <div class="stat-mini-number">02</div>
+                                    <small class="text-white-50">Chi Nhánh Nghệ An</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-mini-box">
+                                    <div class="stat-mini-number">04+</div>
+                                    <small class="text-white-50">Master & Stylist</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="stat-mini-box">
+                                    <div class="stat-mini-number">100%</div>
+                                    <small class="text-white-50">Hài Lòng</small>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Phần 3: Liên hệ & Bản đồ -->
-            <div class="row">
-                <div class="col-md-4 mb-4 mb-md-0">
-                    <h3 class="fw-bold mb-4 text-uppercase">Liên Hệ</h3>
-                    <ul class="list-unstyled fs-5 text-muted">
-                        <li class="mb-3"><i class="bi bi-geo-alt-fill text-danger me-2"></i> <strong>Địa chỉ:</strong>
-                            123 Đường Công Nghệ, Quận IT, TP. HCM</li>
-                        <li class="mb-3"><i class="bi bi-telephone-fill text-success me-2"></i>
-                            <strong>Hotline:</strong> 0123 456 789
-                        </li>
-                        <li class="mb-3"><i class="bi bi-envelope-fill text-primary me-2"></i> <strong>Email:</strong>
-                            cmtcsalon@gmail.com</li>
-                        <li class="mb-3"><i class="bi bi-clock-fill text-warning me-2"></i> <strong>Mở cửa:</strong>
-                            9:00 AM - 8:00 PM</li>
-                    </ul>
+            <!-- Phần 2: Giá trị cốt lõi (3 Thẻ 3 tông màu sang trọng khớp Menu & Footer) -->
+            <div class="text-center mb-4">
+                <span class="section-badge-colorful"><i class="bi bi-gem me-1"></i>Đẳng Cấp Dịch Vụ</span>
+                <h2 class="heading-gold-gradient text-uppercase">Giá Trị Cốt Lõi</h2>
+            </div>
+
+            <div class="row text-center mb-5 pb-3 g-4">
+                <div class="col-md-4">
+                    <div class="card h-100 gia-tri-card gia-tri-gold">
+                        <div class="card-body">
+                            <div class="gia-tri-icon-circle">
+                                <i class="bi bi-scissors"></i>
+                            </div>
+                            <h4 class="fw-bold text-warning mb-3">Chuyên Nghiệp</h4>
+                            <p class="text-white-50 mb-0 lh-lg">
+                                Đội ngũ thợ Master và Hair Artist được đào tạo bài bản, liên tục cập nhật các xu hướng
+                                kiểu tóc nam thời thượng nhất.
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="col-md-8">
-                    <!-- Khung Google Maps nhúng sẵn -->
-                    <div class="map-container shadow-sm rounded-4 overflow-hidden h-100">
+                <div class="col-md-4">
+                    <div class="card h-100 gia-tri-card gia-tri-teal">
+                        <div class="card-body">
+                            <div class="gia-tri-icon-circle">
+                                <i class="bi bi-gem"></i>
+                            </div>
+                            <h4 class="fw-bold text-warning mb-3">Chất Lượng</h4>
+                            <p class="text-light opacity-75 mb-0 lh-lg">
+                                Sử dụng 100% các sản phẩm sáp vuốt, uốn định hình, nhuộm thời trang và thảo dược chăm
+                                sóc tóc chính hãng cao cấp.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card h-100 gia-tri-card gia-tri-amber">
+                        <div class="card-body">
+                            <div class="gia-tri-icon-circle">
+                                <i class="bi bi-cup-hot-fill"></i>
+                            </div>
+                            <h4 class="fw-bold text-warning mb-3">Thư Giãn</h4>
+                            <p class="text-white-50 mb-0 lh-lg">
+                                Không gian sang trọng, âm nhạc nhẹ nhàng cùng gói gội đầu dưỡng sinh massage cổ vai gáy
+                                đánh bay mọi mệt mỏi.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Phần 3: Liên hệ & Bản đồ Ghim Số 51 Lý Tự Trọng, Vinh Phú, Nghệ An (Trường Đại học Nghệ An) -->
+            <div class="row g-4 align-items-stretch">
+                <div class="col-lg-5">
+                    <div class="contact-luxury-card">
+                        <span class="badge bg-warning text-dark fw-bold mb-2 px-3 py-1 rounded-pill">
+                            <i class="bi bi-headset me-1"></i>KẾT NỐI VỚI SALON
+                        </span>
+                        <h3 class="fw-bold text-warning mb-4 text-uppercase">Thông Tin Liên Hệ</h3>
+
+                        <div class="contact-item-box">
+                            <div class="contact-icon-badge icon-bg-red">
+                                <i class="bi bi-geo-alt-fill"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-warning small text-uppercase">Cơ sở 1 (TP. Vinh - Trường ĐH
+                                    Nghệ An):</div>
+                                <div class="text-light small">Số 51 Lý Tự Trọng, Phường Vinh Phú, TP. Vinh, Nghệ An
+                                </div>
+                                <div class="fw-bold text-info small mt-1"><i class="bi bi-pin-map-fill me-1"></i>Cơ sở 2
+                                    (Kỳ Sơn): Mường Lống, Huyện Kỳ Sơn, Nghệ An</div>
+                            </div>
+                        </div>
+
+                        <div class="contact-item-box">
+                            <div class="contact-icon-badge icon-bg-green">
+                                <i class="bi bi-telephone-inbound-fill"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-warning small text-uppercase">Hotline Đặt Lịch & Tư Vấn:</div>
+                                <a href="tel:0971714681"
+                                    class="text-white fw-bold fs-5 text-decoration-none">0971.714.681</a>
+                            </div>
+                        </div>
+
+                        <div class="contact-item-box">
+                            <div class="contact-icon-badge icon-bg-blue">
+                                <i class="bi bi-envelope-paper-heart-fill"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-warning small text-uppercase">Hộp Thư Hỗ Trợ Chính Thức:</div>
+                                <a href="mailto:xuancongsupport@gmail.com"
+                                    class="text-light text-decoration-none">xuancongsupport@gmail.com</a>
+                            </div>
+                        </div>
+
+                        <div class="contact-item-box mb-0">
+                            <div class="contact-icon-badge icon-bg-gold">
+                                <i class="bi bi-clock-history"></i>
+                            </div>
+                            <div>
+                                <div class="fw-bold text-warning small text-uppercase">Khung Giờ Mở Cửa Phục Vụ:</div>
+                                <div class="text-light small">07:00 AM – 20:00 PM (Tất cả các ngày trong tuần)</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-lg-7">
+                    <!-- Khung Google Maps ghim trực tiếp: Số 51 Lý Tự Trọng, Vinh Phú, Nghệ An - Trường Đại học Nghệ An -->
+                    <div class="map-container">
+                        <div class="map-header-bar">
+                            <div>
+                                <i class="bi bi-geo-alt-fill text-danger me-1"></i>
+                                <strong class="small">Bản Đồ Chỉ Đường: Số 51 Lý Tự Trọng, Vinh Phú, Nghệ An (Trường Đại
+                                    học Nghệ An)</strong>
+                            </div>
+                            <a href="https://www.google.com/maps/search/?api=1&query=Tr%C6%B0%E1%BB%9Dng+%C4%90%E1%BA%A1i+h%E1%BB%8Dc+Ngh%E1%BB%87+An+51+L%C3%BD+T%E1%BB%B1+Tr%E1%BB%8Dng+Vinh+Ph%C3%BA+Ngh%E1%BB%87+An"
+                                target="_blank" class="btn btn-warning btn-sm fw-bold py-0 px-3 rounded-pill">
+                                <i class="bi bi-Cursor-fill bi-send-fill me-1"></i>Mở Google Maps
+                            </a>
+                        </div>
                         <iframe
-                            src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3919.123456789!2d106.6296638!3d10.8230989!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2zMTDCsDQ5JzIzLjIiTiAxMDbCsDM3JzQ2LjgiRQ!5e0!3m2!1svi!2s!4v1611234567890!5m2!1svi!2s"
-                            width="100%" height="350" style="border:0;" allowfullscreen="" loading="lazy"></iframe>
+                            src="https://maps.google.com/maps?q=Tr%C6%B0%E1%BB%9Dng+%C4%90%E1%BA%A1i+h%E1%BB%8Dc+Ngh%E1%BB%87+An,+51+L%C3%BD+T%E1%BB%B1+Tr%E1%BB%8Dng,+Vinh+Ph%C3%BA,+Vinh,+Ngh%E1%BB%87+An&t=&z=16&ie=UTF8&iwloc=&output=embed"
+                            allowfullscreen="" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
                     </div>
                 </div>
             </div>
@@ -688,7 +787,6 @@
         </div>
     </section>
 
-    <!-- FOOTER CHÂN TRANG -->
     <!-- ========================================================================= -->
     <!-- FOOTER CHÂN TRANG CHUYÊN NGHIỆP ĐA THIẾT BỊ (PC 4 CỘT & MOBILE TỐI ƯU)    -->
     <!-- ========================================================================= -->
