@@ -116,40 +116,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         exit();
     }
 
-    // 1.1. Tự động cố định đặt lùi 30 phút với khách đặt trước nếu trùng giờ
-    $thong_bao_lui_30p = "";
-    $ngay_dat = date('Y-m-d', strtotime($ngay_gio));
-
-    if ($ky_thuat_vien !== 'Chọn thợ bất kỳ') {
-        $vong_lap = 0;
-        while ($vong_lap < 20) {
-            $sql_trung_tho = "SELECT id, ho_ten, ngay_gio, 
-                                     DATE_FORMAT(ngay_gio, '%H:%i') AS gio_khach_truoc,
-                                     DATE_FORMAT(DATE_ADD(ngay_gio, INTERVAL 30 MINUTE), '%Y-%m-%d %H:%i:00') AS ngay_gio_moi_30p,
-                                     DATE_FORMAT(DATE_ADD(ngay_gio, INTERVAL 30 MINUTE), '%H:%i') AS gio_moi_dep
-                              FROM bang_dat_lich 
-                              WHERE ky_thuat_vien = '$ky_thuat_vien' 
-                                AND DATE(ngay_gio) = '$ngay_dat'
-                                AND ABS(TIMESTAMPDIFF(MINUTE, ngay_gio, '$ngay_gio')) < 30
-                              ORDER BY ngay_gio DESC
-                              LIMIT 1";
-            $res_trung = $conn->query($sql_trung_tho);
-            if ($res_trung && $res_trung->num_rows > 0) {
-                $r_trung = $res_trung->fetch_assoc();
-                $ngay_gio = $r_trung['ngay_gio_moi_30p'];
-                $ngay_dat = date('Y-m-d', strtotime($ngay_gio));
-                $thong_bao_lui_30p = "Giờ hẹn đã được tự động xếp lùi 30 phút (sang " . $r_trung['gio_moi_dep'] . ") để không trùng với khách đặt trước.";
-                $vong_lap++;
-            } else {
-                break;
-            }
-        }
-    }
-
-    // 1.2. Kiểm tra chặn khung giờ bận của thợ
+    // =========================================================================
+    // KIỂM TRA 3: NẾU TRÙNG LỊCH HẸN (< 30 PHÚT) THÌ CHẶN LUÔN KHÔNG CHO ĐẶT GIỜ ĐÓ
+    // =========================================================================
     $ngay_dat = date('Y-m-d', strtotime($ngay_gio));
     $gio_dat  = date('H:i:s', strtotime($ngay_gio));
 
+    if ($ky_thuat_vien !== 'Chọn thợ bất kỳ') {
+        $sql_trung_tho = "SELECT id, ho_ten, ngay_gio, 
+                                 DATE_FORMAT(ngay_gio, '%H:%i') AS gio_khach_truoc,
+                                 DATE_FORMAT(DATE_ADD(ngay_gio, INTERVAL 30 MINUTE), '%H:%i') AS gio_trong_tiep
+                          FROM bang_dat_lich 
+                          WHERE ky_thuat_vien = '$ky_thuat_vien' 
+                            AND DATE(ngay_gio) = '$ngay_dat'
+                            AND ABS(TIMESTAMPDIFF(MINUTE, ngay_gio, '$ngay_gio')) < 30
+                          ORDER BY ngay_gio DESC
+                          LIMIT 1";
+        $res_trung = $conn->query($sql_trung_tho);
+        if ($res_trung && $res_trung->num_rows > 0) {
+            $r_trung = $res_trung->fetch_assoc();
+            $gio_da_dat = $r_trung['gio_khach_truoc'];
+            $gio_goi_y  = $r_trung['gio_trong_tiep'];
+            echo "<script>
+                    alert('❌ KHÔNG THỂ ĐẶT GIỜ NÀY: Nhân viên $ky_thuat_vien đã có khách đặt lịch lúc $gio_da_dat ngày $ngay_dat (mỗi ca cắt 30 phút). Quý khách vui lòng chọn khung giờ khác (từ $gio_goi_y trở đi) hoặc chọn nhân viên khác!');
+                    window.history.back();
+                  </script>";
+            exit();
+        }
+    }
+
+    // KIỂM TRA 4: CHẶN KHUNG GIỜ BẬN CÁ NHÂN CỦA THỢ
     $sql_check_ban = "SELECT * FROM lich_ban_tho 
                       WHERE ky_thuat_vien = '$ky_thuat_vien' 
                         AND ngay_ban = '$ngay_dat' 
@@ -162,7 +158,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $den_gio = substr($row_ban['gio_ket_thuc'], 0, 5);
         $ly_do = $row_ban['ly_do'];
         echo "<script>
-                alert('❌ Rất tiếc! Thợ $ky_thuat_vien đang có lịch bận từ $tu_gio đến $den_gio ngày $ngay_dat ($ly_do). Quý khách vui lòng chọn khung giờ khác!');
+                alert('❌ Rất tiếc! Nhân viên $ky_thuat_vien đang có lịch bận từ $tu_gio đến $den_gio ngày $ngay_dat ($ly_do). Quý khách vui lòng chọn khung giờ khác!');
                 window.history.back();
               </script>";
         exit();
@@ -172,7 +168,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $thoi_gian_dat_sql = date('Y-m-d H:i:s');
     $thoi_gian_dat_dep = date('H:i:s - d/m/Y');
 
-    // 2. Lưu đơn đặt lịch vào bảng bang_dat_lich
+    // Lưu đơn đặt lịch vào bảng bang_dat_lich
     $sql = "INSERT INTO bang_dat_lich (tinh_thanh, quan_huyen, salon_id, dich_vu, ky_thuat_vien, ngay_gio, ho_ten, so_dien_thoai, email, thoi_gian_dat) 
             VALUES ('$tinh_thanh', '$quan_huyen', '$salon_id', '$dich_vu', '$ky_thuat_vien', '$ngay_gio', '$ho_ten', '$so_dien_thoai', '$email_khach', '$thoi_gian_dat_sql')";
 
@@ -181,10 +177,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $thoi_gian_dep = date('H:i - d/m/Y', strtotime($ngay_gio));
         $tong_tien_dep = ($tong_tien_dv > 0) ? number_format($tong_tien_dv, 0, ',', '.') . ' VNĐ' : 'Theo bảng giá Salon';
 
-        // Lời cảm ơn chân thành, dài và chuyên nghiệp ở cuối thư & phiếu hẹn
         $loi_cam_on_dai = "Đội ngũ <strong>CMTC Salon</strong> xin gửi lời cảm ơn chân thành và sâu sắc nhất đến Quý khách <strong>$ho_ten</strong> vì đã tin tưởng lựa chọn dịch vụ của chúng tôi. Mỗi mái tóc đẹp và sự hài lòng, thư giãn của Quý khách chính là niềm tự hào lớn nhất của tập thể Kỹ thuật viên tại Salon. Quý khách vui lòng đến đúng khung giờ đã hẹn để Kỹ thuật viên <strong>$ky_thuat_vien</strong> có thể chuẩn bị chu đáo và phục vụ Quý khách một cách trọn vẹn nhất. Trong trường hợp cần thay đổi giờ hẹn hoặc hỗ trợ thêm thông tin, Quý khách đừng ngần ngại liên hệ với CMTC Salon nhé. Rất hân hạnh được đón tiếp và phục vụ Quý khách!";
 
-        // Chuẩn bị nội dung email gửi ngầm về Gmail khách hàng (Cơ sở Salon chỉ lấy đúng $salon_id khách đã chọn, có thêm dòng Thời gian đặt và lời cảm ơn dài)
         $tieu_de_email = "✅ [CMTC SALON] Xác nhận đặt lịch thành công #$ma_don ($thoi_gian_dep)";
         $noi_dung_html = "
         <div style='font-family: Arial, sans-serif; max-width: 620px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 14px; overflow: hidden;'>
@@ -234,9 +228,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
         </div>";
 
+        // Tách riêng email gửi Khách và email gửi Admin (đều dùng icon ✅ chuẩn BMP để không bị lỗi )
         $du_lieu_email_json = json_encode([
             'to_email'      => $email_khach,
-            'admin_email'   => $GMAIL_CUA_BAN,
+            'admin_email'   => "",
             'subject'       => $tieu_de_email,
             'html_body'     => $noi_dung_html,
             'ma_don'        => $ma_don,
@@ -248,13 +243,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             'thoi_gian_dat' => $thoi_gian_dat_dep,
             'thoi_gian'     => $thoi_gian_dep
         ], JSON_UNESCAPED_UNICODE);
+
+        $tieu_de_admin = "✅ [CMTC SALON] Đơn đặt lịch mới #$ma_don - " . mb_strtoupper($ho_ten, 'UTF-8') . " ($thoi_gian_dep)";
+        $du_lieu_admin_json = json_encode([
+            'to_email'      => $GMAIL_CUA_BAN,
+            'admin_email'   => "",
+            'subject'       => $tieu_de_admin,
+            'html_body'     => $noi_dung_html,
+            'ma_don'        => $ma_don,
+            'ho_ten'        => $ho_ten,
+            'so_dien_thoai' => $so_dien_thoai
+        ], JSON_UNESCAPED_UNICODE);
         ?>
 <!DOCTYPE html>
 <html lang="vi">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Đặt Lịch Thành Công - CMTC Salon</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
@@ -338,6 +345,62 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         color: #111;
     }
     </style>
+
+    <!-- ==================== CẤU HÌNH WEB APP (PWA) CHO IPHONE & ANDROID ==================== -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CMTC Salon">
+    <meta name="application-name" content="CMTC Salon">
+    <meta name="theme-color" content="#0f1216">
+    <link rel="apple-touch-icon" href="../images/logo.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="../images/logo.png">
+    <link rel="icon" type="image/png" href="../images/logo.png">
+    <link rel="manifest" href="../manifest.json">
+    <style>
+    /* Tối ưu giao diện App toàn màn hình trên iPhone (Tránh tai thỏ / Dynamic Island & vạch Home) */
+    @media all and (display-mode: standalone) {
+        body {
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+            padding-top: env(safe-area-inset-top, 0px);
+        }
+
+        .cmtc-navbar {
+            padding-top: calc(10px + env(safe-area-inset-top, 0px)) !important;
+        }
+
+        .cmtc-mobile-bottom-bar {
+            height: calc(64px + env(safe-area-inset-bottom, 0px)) !important;
+            padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+        }
+    }
+    </style>
+    <script>
+    // Giữ toàn bộ liên kết chuyển trang nằm gọn bên trong App iPhone (Không bị văng ra Safari)
+    (function() {
+        const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
+        if (isStandalone) {
+            document.addEventListener('click', function(e) {
+                const a = e.target.closest('a');
+                if (!a) return;
+                const href = a.getAttribute('href');
+                if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith(
+                        'tel:') || href.startsWith('mailto:') || a.getAttribute('target') === '_blank' || a
+                    .hasAttribute('data-bs-toggle')) {
+                    return;
+                }
+                if (a.hostname === window.location.hostname || !a.hostname) {
+                    e.preventDefault();
+                    window.location.href = a.href;
+                }
+            }, false);
+        }
+    })();
+    </script>
+    <!-- ===================================================================================== -->
+
 </head>
 
 <body class="d-flex align-items-center min-vh-100 py-5">
@@ -346,7 +409,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             <div class="col-lg-7 col-md-9">
                 <div class="card booking-ticket">
                     <div class="ticket-header">
-                        <!-- LOGO HÌNH TRÒN CỦA SALON (BẠN TỰ CHÈN ẢNH TẠI src BÊN DƯỚI) -->
                         <img src="../images/logo.png"
                             onerror="this.src='../images/Gemini_Generated_Image_1wira21wira21wir.png'"
                             alt="CMTC Salon Logo" class="ticket-circle-logo">
@@ -356,12 +418,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     </div>
 
                     <div class="card-body p-4 p-md-5">
-                        <?php if ($thong_bao_lui_30p !== ""): ?>
-                        <div class="alert alert-warning border-warning small mb-4">
-                            <i class="bi bi-clock-history me-1"></i><?= $thong_bao_lui_30p ?>
-                        </div>
-                        <?php endif; ?>
-
                         <div class="d-flex align-items-center p-3 rounded-3 mb-4"
                             style="background-color: #f0fdf4; border: 1px solid #bbf7d0;">
                             <i class="bi bi-envelope-check-fill fs-3 text-success me-3"></i>
@@ -426,7 +482,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                             </tbody>
                         </table>
 
-                        <!-- LỜI CẢM ƠN DÀI VÀ CHÂN THÀNH TỪ CMTC SALON -->
                         <div class="thank-you-box small mb-4">
                             <div class="fw-bold text-dark mb-1"><i class="bi bi-heart-fill text-danger me-1"></i>Lời cảm
                                 ơn từ CMTC Salon:</div>
@@ -455,17 +510,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     <script>
     const webhookUrl = <?= json_encode($GOOGLE_SCRIPT_WEBHOOK_URL) ?>;
     const emailPayload = <?= $du_lieu_email_json ?>;
+    const adminPayload = <?= $du_lieu_admin_json ?>;
 
-    // Gửi thư xác nhận ngầm ngay lập tức qua Google Apps Script Webhook
     if (webhookUrl && webhookUrl.trim() !== "") {
         fetch(webhookUrl, {
             method: "POST",
             mode: "no-cors",
             headers: {
-                "Content-Type": "application/json"
+                "Content-Type": "text/plain;charset=utf-8"
             },
             body: JSON.stringify(emailPayload)
-        }).catch(err => console.log("Webhook:", err));
+        }).catch(err => console.log("Webhook Khach:", err));
+
+        if (adminPayload.to_email && adminPayload.to_email.toLowerCase() !== (emailPayload.to_email || "")
+        .toLowerCase()) {
+            setTimeout(() => {
+                fetch(webhookUrl, {
+                    method: "POST",
+                    mode: "no-cors",
+                    headers: {
+                        "Content-Type": "text/plain;charset=utf-8"
+                    },
+                    body: JSON.stringify(adminPayload)
+                }).catch(err => console.log("Webhook Admin:", err));
+            }, 400);
+        }
     }
     </script>
 </body>

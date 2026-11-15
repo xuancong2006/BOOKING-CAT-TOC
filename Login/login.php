@@ -40,7 +40,40 @@ function traVeJsonSach($arr) {
     exit();
 }
 
-// Hàm kiểm tra mật khẩu mạnh chuẩn 5 tiêu chí như trong Video (8 Chars, A-Z, a-z, 123, @#$)
+// =========================================================================================
+// HÀM SỬA TRIỆT ĐỂ LỖI ICON () KHI GỬI GMAIL QUA GOOGLE APPS SCRIPT
+// - Trong tiêu đề (Subject): Thay các emoji 4-byte (U+10000..U+10FFFF bị lỗi CESU-8 trên
+//   MailApp.sendEmail) sang icon chuẩn BMP 3-byte (✅ U+2705) hiển thị nét 100% trên Gmail.
+// - Trong nội dung HTML (Body): Tự động chuyển mọi emoji 4-byte thành mã HTML Entity (&#...;)
+// =========================================================================================
+function chuanHoaTieuDeGmail($subject) {
+    $map_bmp = array(
+        '🔐' => '✅',
+        '🔑' => '✅',
+        '🎉' => '✅',
+        '🔔' => '✅',
+        '🎁' => '✅',
+        '💈' => '✅',
+        '👑' => '✅'
+    );
+    $subject = strtr($subject, $map_bmp);
+    // Phòng ngừa mọi ký tự 4-byte khác bị biến thành  trên tiêu đề Gmail
+    $subject = preg_replace('/[\x{10000}-\x{10FFFF}]/u', '✅', $subject);
+    return $subject;
+}
+
+function maHoaEmojiHtmlBody($html) {
+    return preg_replace_callback('/[\x{10000}-\x{10FFFF}]/u', function($m) {
+        $char = $m[0];
+        $code = ((ord($char[0]) & 0x07) << 18)
+              | ((ord($char[1]) & 0x3F) << 12)
+              | ((ord($char[2]) & 0x3F) << 6)
+              | (ord($char[3]) & 0x3F);
+        return '&#' . $code . ';';
+    }, $html);
+}
+
+// Hàm kiểm tra mật khẩu mạnh chuẩn 5 tiêu chí (8 Chars, A-Z, a-z, 123, @#$)
 function kiemTraMatKhauManh($mk) {
     $loi = array();
     if (strlen($mk) < 8) {
@@ -67,7 +100,7 @@ function kiemTraMatKhauManh($mk) {
     return array('hop_le' => true, 'thong_bao' => 'Mật khẩu mạnh hợp lệ.');
 }
 
-// Hàm tạo ngẫu nhiên 1 mật khẩu đạt chuẩn Mạnh (đầy đủ Hoa, thường, số, ký tự đặc biệt, >= 8 ký tự)
+// Hàm tạo ngẫu nhiên 1 mật khẩu đạt chuẩn Mạnh
 function taoMatKhauManhNgauNhien() {
     $hoa  = "ABCDEFGHJKLMNPQRSTUVWXYZ";
     $thg  = "abcdefghijkmnopqrstuvwxyz";
@@ -83,7 +116,7 @@ function taoMatKhauManhNgauNhien() {
     return $mk;
 }
 
-// Hàm tự động lấy URL chuẩn của trang hiện tại (Chạy đúng 100% trên cả Localhost XAMPP & Hosting InfinityFree/Cloudflare)
+// Hàm tự động lấy URL chuẩn của trang hiện tại
 function layUrlHienTaiChuan() {
     $is_https = false;
     if (!empty($_SERVER['HTTPS']) && strtolower($_SERVER['HTTPS']) !== 'off') {
@@ -146,13 +179,20 @@ function goiGoogleScriptWebhook($webhook_url, $payload_arr) {
     if (empty($webhook_url)) {
         return false;
     }
+    if (isset($payload_arr['subject'])) {
+        $payload_arr['subject'] = chuanHoaTieuDeGmail($payload_arr['subject']);
+    }
+    if (isset($payload_arr['html_body'])) {
+        $payload_arr['html_body'] = maHoaEmojiHtmlBody($payload_arr['html_body']);
+    }
+
     $json_data = json_encode($payload_arr, JSON_UNESCAPED_UNICODE);
 
     if (function_exists('curl_init')) {
         $ch = @curl_init($webhook_url);
         @curl_setopt($ch, CURLOPT_POST, true);
         @curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data);
-        @curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json'));
+        @curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-Type: application/json; charset=utf-8'));
         @curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         @curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         @curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -172,31 +212,32 @@ function goiGoogleScriptWebhook($webhook_url, $payload_arr) {
 
 function guiMaOTPVeGmailChinhChu($ho_ten, $sdt, $email_nhan, $ma_otp, $webhook_url, $gmail_support) {
     $thoi_gian = date('H:i:s - d/m/Y');
-    $tieu_de = "🔐 [CMCT SALON] Mã xác thực OTP đăng ký tài khoản của bạn là: $ma_otp";
-    $noi_dung_html = "
+    // Dùng icon ✅ (U+2705 chuẩn 3-byte BMP) để hiển thị đẹp 100% trên Gmail, không bị lỗi 
+    $tieu_de = chuanHoaTieuDeGmail("✅ [CMTC SALON] Mã xác thực OTP đăng ký tài khoản của bạn là: $ma_otp");
+    $noi_dung_html = maHoaEmojiHtmlBody("
     <div style='font-family: Arial, sans-serif; max-width: 560px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 14px; overflow: hidden;'>
         <div style='background-color: #0b4a4d; color: #e6b96f; padding: 22px; text-align: center; border-bottom: 3px solid #c09e6c;'>
             <h2 style='margin: 0; text-transform: uppercase; font-size: 20px;'>MÃ XÁC THỰC ĐĂNG KÝ TÀI KHOẢN</h2>
-            <p style='color: #fff; margin: 5px 0 0; font-size: 13px;'>CMCT Salon - Hệ Thống Đặt Lịch</p>
+            <p style='color: #fff; margin: 5px 0 0; font-size: 13px;'>CMTC Salon - Hệ Thống Đặt Lịch</p>
         </div>
         <div style='padding: 24px; background-color: #fff; color: #333; line-height: 1.65; text-align: center;'>
             <p style='margin-top: 0;'>Xin chào <strong>$ho_ten</strong>,</p>
-            <p>Hệ thống <strong>CMCT Salon</strong> nhận được yêu cầu đăng ký tài khoản cho số điện thoại <strong>$sdt</strong> và địa chỉ Gmail <strong>$email_nhan</strong>.</p>
+            <p>Hệ thống <strong>CMTC Salon</strong> nhận được yêu cầu đăng ký tài khoản cho số điện thoại <strong>$sdt</strong> và địa chỉ Gmail <strong>$email_nhan</strong>.</p>
             <p style='margin-bottom: 8px; font-weight: bold; color: #0b4a4d;'>Mã xác thực OTP gồm 6 chữ số của bạn là:</p>
             <div style='display: inline-block; background: #f0fdf4; border: 2px dashed #198754; color: #166534; font-size: 30px; font-weight: 800; letter-spacing: 8px; padding: 12px 30px; border-radius: 12px; margin: 10px 0;'>
                 $ma_otp
             </div>
             <p style='color: #dc3545; font-size: 13px; font-weight: bold; margin-top: 12px;'>
-                ⏳ Mã OTP này có hiệu lực trong vòng 5 phút (Phát hành lúc: $thoi_gian).
+                &#9203; Mã OTP này có hiệu lực trong vòng 5 phút (Phát hành lúc: $thoi_gian).
             </p>
             <p style='color: #666; font-size: 13px; margin-bottom: 0;'>
-                Vui lòng nhập chính xác 6 chữ số này vào màn hình xác thực trên trang Đăng ký CMCT Salon để hoàn tất tạo tài khoản.
+                Vui lòng nhập chính xác 6 chữ số này vào màn hình xác thực trên trang Đăng ký CMTC Salon để hoàn tất tạo tài khoản.
             </p>
         </div>
         <div style='background-color: #111; color: #e6b96f; padding: 12px; text-align: center; font-size: 12px;'>
-            Email được gửi tự động từ hệ thống bảo mật CMCT Salon ($gmail_support).
+            Email được gửi tự động từ hệ thống bảo mật CMTC Salon ($gmail_support).
         </div>
-    </div>";
+    </div>");
 
     $payload_arr = array(
         'to_email'    => $email_nhan,
@@ -211,25 +252,25 @@ function guiMaOTPVeGmailChinhChu($ho_ten, $sdt, $email_nhan, $ma_otp, $webhook_u
 
 function taoVaGuiMailDangKyTaiKhoan($ho_ten, $email_khach, $so_dien_thoai, $webhook_url, $gmail_support) {
     if (empty($email_khach) || strpos($email_khach, '@') === false || empty($webhook_url)) {
-        return null;
+        return array('sent_by_php' => false, 'payload' => null);
     }
 
     $thoi_gian_dk = date('H:i:s - d/m/Y');
-    $tieu_de = "🎉 [CMCT SALON] Xác nhận đăng ký tài khoản thành công!";
-    $noi_dung_html = "
+    $tieu_de = chuanHoaTieuDeGmail("✅ [CMTC SALON] Xác nhận đăng ký tài khoản thành công!");
+    $noi_dung_html = maHoaEmojiHtmlBody("
     <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden;'>
         <div style='background-color: #0b4a4d; color: #e6b96f; padding: 24px; text-align: center; border-bottom: 3px solid #c09e6c;'>
-            <h2 style='margin: 0; text-transform: uppercase;'>CMCT SALON - ĐĂNG KÝ THÀNH CÔNG</h2>
+            <h2 style='margin: 0; text-transform: uppercase;'>CMTC SALON - ĐĂNG KÝ THÀNH CÔNG</h2>
         </div>
         <div style='padding: 24px; background-color: #fff; color: #333; line-height: 1.65;'>
             <p>Xin chào <strong>$ho_ten</strong>,</p>
-            <p>Chúc mừng bạn! Địa chỉ Gmail <strong>$email_khach</strong> và Số điện thoại chính chủ <strong>$so_dien_thoai</strong> đã được xác thực mã OTP 6 số thành công trên hệ thống <strong>CMCT Salon</strong>.</p>
+            <p>Chúc mừng bạn! Địa chỉ Gmail <strong>$email_khach</strong> và Số điện thoại chính chủ <strong>$so_dien_thoai</strong> đã được xác thực mã OTP 6 số thành công trên hệ thống <strong>CMTC Salon</strong>.</p>
             <p>Thời gian đăng ký: <strong>$thoi_gian_dk</strong></p>
         </div>
         <div style='background-color: #111; color: #e6b96f; padding: 14px; text-align: center; font-size: 12px;'>
-            Email được gửi tự động từ bộ phận hỗ trợ CMCT Salon ($gmail_support).
+            Email được gửi tự động từ bộ phận hỗ trợ CMTC Salon ($gmail_support).
         </div>
-    </div>";
+    </div>");
 
     $payload_arr = array(
         'to_email'      => $email_khach,
@@ -241,23 +282,23 @@ function taoVaGuiMailDangKyTaiKhoan($ho_ten, $email_khach, $so_dien_thoai, $webh
         'so_dien_thoai' => $so_dien_thoai
     );
 
-    goiGoogleScriptWebhook($webhook_url, $payload_arr);
-    return $payload_arr;
+    $da_gui = goiGoogleScriptWebhook($webhook_url, $payload_arr);
+    return array('sent_by_php' => $da_gui, 'payload' => $payload_arr);
 }
 
 // Hàm gửi mật khẩu mạnh mới + Đường link đổi mật khẩu về Gmail khi khách bấm "Quên mật khẩu"
 function taoVaGuiMailQuenMatKhau($ho_ten, $email_khach, $mat_khau_moi, $link_doi_mk, $webhook_url, $gmail_support) {
     $thoi_gian = date('H:i:s - d/m/Y');
-    $tieu_de = "🔑 [CMCT SALON] Cấp mật khẩu mới & Đường dẫn đổi mật khẩu bảo mật";
-    $noi_dung_html = "
+    $tieu_de = chuanHoaTieuDeGmail("✅ [CMTC SALON] Cấp mật khẩu mới & Đường dẫn đổi mật khẩu bảo mật");
+    $noi_dung_html = maHoaEmojiHtmlBody("
     <div style='font-family: Arial, sans-serif; max-width: 580px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 14px; overflow: hidden;'>
         <div style='background-color: #0b4a4d; color: #e6b96f; padding: 22px; text-align: center; border-bottom: 3px solid #c09e6c;'>
             <h2 style='margin: 0; text-transform: uppercase; font-size: 20px;'>KHÔI PHỤC MẬT KHẨU TÀI KHOẢN</h2>
-            <p style='color: #fff; margin: 5px 0 0; font-size: 13px;'>CMCT Salon - Hỗ Trợ Bảo Mật Khách Hàng</p>
+            <p style='color: #fff; margin: 5px 0 0; font-size: 13px;'>CMTC Salon - Hỗ Trợ Bảo Mật Khách Hàng</p>
         </div>
         <div style='padding: 24px; background-color: #fff; color: #333; line-height: 1.65;'>
             <p style='margin-top: 0;'>Xin chào <strong>$ho_ten</strong>,</p>
-            <p>Hệ thống <strong>CMCT Salon</strong> vừa nhận được yêu cầu khôi phục mật khẩu cho tài khoản Gmail <strong>$email_khach</strong> lúc $thoi_gian.</p>
+            <p>Hệ thống <strong>CMTC Salon</strong> vừa nhận được yêu cầu khôi phục mật khẩu cho tài khoản Gmail <strong>$email_khach</strong> lúc $thoi_gian.</p>
             <div style='background: #f0fdf4; border: 2px dashed #198754; border-radius: 12px; padding: 16px; text-align: center; margin: 18px 0;'>
                 <div style='font-size: 13px; color: #555; margin-bottom: 6px;'>Mật khẩu mạnh mới hệ thống cấp tự động cho bạn là:</div>
                 <div style='font-size: 26px; font-weight: 800; color: #166534; letter-spacing: 2px;'>$mat_khau_moi</div>
@@ -265,15 +306,15 @@ function taoVaGuiMailQuenMatKhau($ho_ten, $email_khach, $mat_khau_moi, $link_doi
             <p>Bạn có thể dùng ngay mật khẩu mới ở trên để đăng nhập, hoặc nhấn vào nút bên dưới để tự đặt lại mật khẩu mạnh theo ý muốn (Link có hiệu lực trong 30 phút):</p>
             <div style='text-align: center; margin: 22px 0;'>
                 <a href='$link_doi_mk' style='background-color: #0b4a4d; color: #e6b96f; text-decoration: none; padding: 13px 28px; border-radius: 10px; font-weight: bold; display: inline-block;'>
-                    🔗 BẤM VÀO ĐÂY ĐỂ ĐỔI MẬT KHẨU MỚI
+                    &#128279; BẤM VÀO ĐÂY ĐỂ ĐỔI MẬT KHẨU MỚI
                 </a>
             </div>
             <p style='font-size: 12px; color: #777; margin-bottom: 0; word-break: break-all;'>Đường dẫn trực tiếp: <a href='$link_doi_mk'>$link_doi_mk</a></p>
         </div>
         <div style='background-color: #111; color: #e6b96f; padding: 12px; text-align: center; font-size: 12px;'>
-            Email được gửi tự động từ bộ phận hỗ trợ CMCT Salon ($gmail_support).
+            Email được gửi tự động từ bộ phận hỗ trợ CMTC Salon ($gmail_support).
         </div>
-    </div>";
+    </div>");
 
     $payload_arr = array(
         'to_email'    => $email_khach,
@@ -344,13 +385,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     $uid_fp   = (int)$user_row['id'];
     $ten_fp   = $user_row['ho_ten'];
 
-    // Cấp 1 mật khẩu mới ngẫu nhiên chuẩn MẠNH (đủ chữ Hoa, chữ thường, số, ký tự đặc biệt) và cập nhật vào CSDL
     $mat_khau_moi = taoMatKhauManhNgauNhien();
     $mk_esc = $conn->real_escape_string($mat_khau_moi);
     $now_sql = date('Y-m-d H:i:s');
     $conn->query("UPDATE tai_khoan SET mat_khau = '$mk_esc', cap_nhat_mk_luc = '$now_sql' WHERE id = $uid_fp");
 
-    // Tạo đường dẫn đổi mật khẩu trực tiếp có chữ ký bảo mật (tự động nhận diện cả Localhost & Hosting)
     $exp_time = time() + 1800; // Hiệu lực 30 phút
     $sig = substr(hash_hmac('sha256', $email_fp . '|' . $exp_time, 'CMTC_SALON_SECRET_KEY_2026'), 0, 20);
     $base_login_url = layUrlHienTaiChuan();
@@ -358,11 +397,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 
     $kq_fp = taoVaGuiMailQuenMatKhau($ten_fp, $email_fp, $mat_khau_moi, $link_doi_mk, $GOOGLE_SCRIPT_WEBHOOK_URL, $GMAIL_SUPPORT_SALON);
 
+    // Chỉ bắn dự phòng qua trình duyệt nếu PHP cURL bị chặn trên Hosting (Tránh gửi lặp 2 email giống nhau)
     traVeJsonSach(array(
         'status'          => 'success',
         'msg'             => "✅ Đã gửi mật khẩu mới và đường link đổi mật khẩu về hộp thư Gmail ($email_fp)! Vui lòng kiểm tra hộp thư đến hoặc thư rác.",
-        'webhook_url'     => $GOOGLE_SCRIPT_WEBHOOK_URL,
-        'webhook_payload' => base64_encode(json_encode($kq_fp['payload'], JSON_UNESCAPED_UNICODE))
+        'webhook_url'     => $kq_fp['sent_by_php'] ? '' : $GOOGLE_SCRIPT_WEBHOOK_URL,
+        'webhook_payload' => $kq_fp['sent_by_php'] ? '' : base64_encode(json_encode($kq_fp['payload'], JSON_UNESCAPED_UNICODE))
     ));
 }
 
@@ -438,7 +478,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         traVeJsonSach(array('status' => 'error', 'msg' => 'Vui lòng nhập đúng địa chỉ Gmail chính chủ!'));
     }
 
-    // Kiểm tra bắt buộc mật khẩu mạnh (8 Chars, A-Z, a-z, 123, @#$)
     $check_mk_dk = kiemTraMatKhauManh($mat_khau_raw);
     if (!$check_mk_dk['hop_le']) {
         traVeJsonSach(array('status' => 'error', 'msg' => $check_mk_dk['thong_bao']));
@@ -481,8 +520,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         'email'           => $email_raw,
         'so_dien_thoai'   => $sdt_chuan,
         'msg'             => "Mã xác thực OTP 6 số đã được gửi tới Gmail: $email_raw",
-        'webhook_url'     => $GOOGLE_SCRIPT_WEBHOOK_URL,
-        'webhook_payload' => base64_encode(json_encode($kq_mail['payload'], JSON_UNESCAPED_UNICODE))
+        'webhook_url'     => $kq_mail['sent_by_php'] ? '' : $GOOGLE_SCRIPT_WEBHOOK_URL,
+        'webhook_payload' => $kq_mail['sent_by_php'] ? '' : base64_encode(json_encode($kq_mail['payload'], JSON_UNESCAPED_UNICODE))
     ));
 }
 
@@ -523,7 +562,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         $_SESSION['vai_tro']          = 'khach';
         $_SESSION['trang_thai_duyet'] = 1;
 
-        $payload_welcome = taoVaGuiMailDangKyTaiKhoan(
+        $kq_welcome = taoVaGuiMailDangKyTaiKhoan(
             $pending['ho_ten'],
             $pending['email'],
             $pending['so_dien_thoai'],
@@ -537,8 +576,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             'status'          => 'success',
             'msg'             => 'Xác thực thành công! Đang chuyển đến trang Đặt lịch...',
             'redirect'        => '../DatLich/DatLich.php',
-            'webhook_url'     => $GOOGLE_SCRIPT_WEBHOOK_URL,
-            'webhook_payload' => $payload_welcome ? base64_encode(json_encode($payload_welcome, JSON_UNESCAPED_UNICODE)) : ''
+            'webhook_url'     => ($kq_welcome['sent_by_php'] || !$kq_welcome['payload']) ? '' : $GOOGLE_SCRIPT_WEBHOOK_URL,
+            'webhook_payload' => ($kq_welcome['sent_by_php'] || !$kq_welcome['payload']) ? '' : base64_encode(json_encode($kq_welcome['payload'], JSON_UNESCAPED_UNICODE))
         ));
     } else {
         traVeJsonSach(array('status' => 'error', 'msg' => 'Lỗi lưu tài khoản: ' . $conn->error));
@@ -579,7 +618,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Đăng Nhập & Xác Thực Bảo Mật - CMTC Salon</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
@@ -635,7 +675,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
     }
 
     /* ======================================================================= */
-    /* BỘ KIỂM TRA ĐỘ MẠNH MẬT KHẨU GIỐNG HỆT VIDEO (CODE BY GAURAV STYLE)     */
+    /* BỘ KIỂM TRA ĐỘ MẠNH MẬT KHẨU GIỐNG HỆT VIDEO                           */
     /* ======================================================================= */
     .pw-meter-card {
         background: #ffffff;
@@ -1194,10 +1234,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
     }
     </style>
     <!-- ==================== CẤU HÌNH WEB APP (PWA) CHO IPHONE & ANDROID ==================== -->
-    <meta name="viewport"
-        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="CMTC Salon">
     <meta name="application-name" content="CMTC Salon">
@@ -1210,7 +1248,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
     <link rel="manifest" href="../manifest.json">
 
     <style>
-    /* Tối ưu giao diện App toàn màn hình trên iPhone (Tránh tai thỏ / Dynamic Island & vạch Home) */
     @media all and (display-mode: standalone) {
         body {
             -webkit-user-select: none;
@@ -1231,7 +1268,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
     </style>
 
     <script>
-    // Giữ toàn bộ thao tác bấm chuyển trang nằm gọn bên trong App iPhone (Không bị văng ra Safari)
     (function() {
         const isStandalone = window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches;
         if (isStandalone) {
@@ -1369,7 +1405,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                     <input type="hidden" name="exp" value="<?= (int)$exp_dang_reset ?>" />
                     <input type="hidden" name="sig" value="<?= htmlspecialchars($sig_dang_reset) ?>" />
 
-                    <!-- Khung Create A Strong Password như trong video -->
                     <div class="pw-meter-card mb-3" id="boxStrengthReset">
                         <div class="text-center fw-bold text-dark mb-3" style="font-size: 15px;">
                             Create A Strong Password
@@ -1439,9 +1474,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                 </ul>
 
                 <div class="tab-content">
-                    <!-- ========================================================= -->
-                    <!-- TAB 1: ĐĂNG NHẬP (CÓ NÚT QUÊN MẬT KHẨU)                   -->
-                    <!-- ========================================================= -->
+                    <!-- TAB 1: ĐĂNG NHẬP -->
                     <div class="tab-pane fade <?= !$mo_tab_dang_ky ? 'show active' : '' ?>" id="tabLogin">
                         <form method="POST" action="login.php">
                             <input type="hidden" name="btn_dang_nhap" value="1" />
@@ -1473,9 +1506,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                         </form>
                     </div>
 
-                    <!-- ========================================================= -->
-                    <!-- TAB 2: ĐĂNG KÝ MỚI (TÍCH HỢP MẬT KHẨU MẠNH NHƯ VIDEO)     -->
-                    <!-- ========================================================= -->
+                    <!-- TAB 2: ĐĂNG KÝ MỚI -->
                     <div class="tab-pane fade <?= $mo_tab_dang_ky ? 'show active' : '' ?>" id="tabRegister">
                         <div id="alertLoiDangKy" class="alert alert-danger d-none small fw-semibold py-2"></div>
 
@@ -1522,7 +1553,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
                                 </div>
                             </div>
 
-                            <!-- BỘ KIỂM TRA ĐỘ MẠNH MẬT KHẨU GIỐNG HỆT VIDEO -->
+                            <!-- BỘ KIỂM TRA ĐỘ MẠNH MẬT KHẨU -->
                             <div class="mb-4">
                                 <label class="form-label fw-semibold text-muted small mb-1">
                                     Tạo Mật Khẩu Mạnh (Đủ chữ hoa, chữ thường, số & ký tự đặc biệt)
@@ -1580,9 +1611,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    // =========================================================================
-    // 0. LOGIC KIỂM TRA SỨC MẠNH MẬT KHẨU GIỐNG HỆT VIDEO (8 Chars, A-Z, a-z, 123, @#$)
-    // =========================================================================
     function batTatHienMatKhau(inputId, iconEl) {
         const inp = document.getElementById(inputId);
         if (!inp) return;
@@ -1668,7 +1696,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         };
     }
 
-    // Khởi tạo lắng nghe sự kiện gõ phím cho ô mật khẩu Đăng ký & Đặt lại mật khẩu
     const inpRegMK = document.getElementById("regMatKhau");
     if (inpRegMK) {
         inpRegMK.addEventListener("input", () => {
@@ -1711,9 +1738,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
         return true;
     }
 
-    // =========================================================================
-    // 1. DANH SÁCH ĐẦU SỐ ĐIỆN THOẠI CÁC NƯỚC TRÊN THẾ GIỚI & TÌM KIẾM NHANH
-    // =========================================================================
     const DANH_SACH_QUOC_GIA = [{
             flag: "🇻🇳",
             name: "Việt Nam (Vietnam)",
@@ -1967,24 +1991,31 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
 
     hienThiDanhSachQuocGia('');
 
+    // Giải mã Base64 chuẩn UTF-8 bằng TextDecoder (Không làm hỏng ký tự Unicode)
+    function giaiMaBase64UTF8(base64Str) {
+        const binaryString = window.atob(base64Str);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        return new TextDecoder('utf-8').decode(bytes);
+    }
+
     function banWebhookNgam(webhookUrl, base64Payload) {
         if (!webhookUrl || !base64Payload) return;
         try {
-            const rawJson = decodeURIComponent(escape(window.atob(base64Payload)));
+            const rawJson = giaiMaBase64UTF8(base64Payload);
             fetch(webhookUrl, {
                 method: 'POST',
                 mode: 'no-cors',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'text/plain;charset=utf-8'
                 },
                 body: rawJson
             }).catch(() => {});
         } catch (err) {}
     }
 
-    // =========================================================================
-    // 2. XỬ LÝ QUÊN MẬT KHẨU QUA GMAIL
-    // =========================================================================
     function xuLyQuenMatKhau() {
         const inputEm = document.getElementById('inputEmailQuenMK');
         const alertEl = document.getElementById('alertQuenMatKhau');
@@ -2036,9 +2067,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
             });
     }
 
-    // =========================================================================
-    // 3. ĐIỀN THÔNG TIN XONG -> KIỂM TRA MẬT KHẨU MẠNH -> HIỆN MÀN HÌNH NHẬP OTP
-    // =========================================================================
     const otpDigits = Array.from(document.querySelectorAll('.vault-otp-digit'));
     let dangXacThucOTP = false;
     let resendTimer = null;
@@ -2060,7 +2088,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['btn_dang_nhap'])) {
             return false;
         }
 
-        // Bắt buộc mật khẩu đạt đủ 5/5 tiêu chí Strong như trong video mới cho phép đăng ký
         const danhGiaMK = capNhatGiaoDienDoManh("regMatKhau", "boxStrengthReg", "textStrengthReg", "barStrengthReg");
         if (danhGiaMK.score < 5) {
             alertLoi.innerHTML =
